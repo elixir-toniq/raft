@@ -38,6 +38,11 @@ defmodule TonicLeader.Server do
     {:keep_state_and_data, [{:reply, from, value}]}
   end
 
+  def handle_event(:cast, :election_timeout, :follower, data) do
+    new_data = data
+    {:next_state, :candidate, new_data}
+  end
+
   def handle_event(event_type, event, state, data) do
     IO.inspect([event_type, event, state, data])
   end

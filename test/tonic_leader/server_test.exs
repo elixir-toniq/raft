@@ -28,9 +28,17 @@ defmodule TonicLeader.ServerTest do
     assert Server.get(s1, :foo) == :bar
   end
 
-  # test "Followers start an election if they don't receive rpcs within the timeout" do
-  #   assert Server.start_link()
-  # end
+  test "Followers start an election if they don't receive rpcs within the timeout" do
+    config = Config.new([
+      servers: [self()],
+      election_timeout_min: 0,
+      election_timeout_max: 1
+    ])
+
+    {:ok, s1} = Server.start_link(config)
+
+    assert_received {:request_vote, 1}
+  end
 
   # test "followers forward requests to leaders" do
   #   cluster = start_cluster(nodes: 3)
