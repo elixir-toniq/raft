@@ -1,1 +1,5 @@
-%{"gen_state_machine": {:hex, :gen_state_machine, "2.0.1", "85efd5a0376929c3a4246dd943e17564a2908c7ddd7acd242d84594e785d83f8", [], [], "hexpm"}}
+%{"dialyxir": {:hex, :dialyxir, "0.5.1", "b331b091720fd93e878137add264bac4f644e1ddae07a70bf7062c7862c4b952", [], [], "hexpm"},
+  "gen_state_machine": {:hex, :gen_state_machine, "2.0.1", "85efd5a0376929c3a4246dd943e17564a2908c7ddd7acd242d84594e785d83f8", [], [], "hexpm"},
+  "msgpax": {:hex, :msgpax, "2.1.0", "6ca513821f4654e0e6762a673b60b4c9a81fd8a0db7f7618a8b06bfdc1f1fbdd", [], [{:plug, "~> 1.0", [hex: :plug, repo: "hexpm", optional: true]}], "hexpm"},
+  "rocksdb": {:hex, :rocksdb, "0.13.1", "14baf1c240f4a678fa4cb0bf624016d5d12a4a0e3f09b8f52924abdce31fbd66", [], [], "hexpm"},
+  "stream_data": {:hex, :stream_data, "0.4.0", "128c01bfd0fae0108d169eee1772aeed6958604f8782abc2d6e11da4e52468b0", [], [], "hexpm"}}
