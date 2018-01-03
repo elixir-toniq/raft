@@ -19,6 +19,14 @@ defmodule TonicLeader.Server do
 
   # @default_state %State{}
 
+  def child_spec(opts), do: %{
+    id: __MODULE__,
+    start: {__MODULE__, :start_link, [opts]},
+    restart: :permanent,
+    shutdown: 5000,
+    type: :worker
+  }
+
   def bootstrap(%Config{}=config) do
     GenStateMachine.start_link(__MODULE__, {:bootstrap, config})
   end
@@ -59,37 +67,31 @@ defmodule TonicLeader.Server do
     GenStateMachine.call(sm, :status)
   end
 
-  def init({:bootstrap, config}) do
-    Logger.info("Bootstrapping some shit")
-    {:ok, log_store} = LogStore.open(Config.db_path(config))
-    if has_data?(log_store) do
-      {:error, :dangerous_bootstraps}
-    else
-      Logger.info("Looks like we can start")
-      configuration = %{
-        servers: [%{name: config.name, address: node(), suffrage: :voter}]
-      }
-      # :rocksdb.put(log_store, "CurrentTerm", "1", [])
-      log = Log.configuration(1, 1, configuration)
-      :ok = LogStore.store_logs(log_store, [log])
-
-      Logger.info("Bootstrapping complete")
-
-      state =
-        @default_state
-        |> Map.put(:log_store, log_store)
-        |> Map.put(:election_timeout, 30_000)
-        |> restore_state
-
-      Logger.info("State has been restored")
-
-      {:ok, :leader, state}
-    end
-  end
-
+  @doc """
+  TODO: Implement this workflow.
+  * Pull logs out of storage
+  * Pull current term out of storage
+  * Set a new election timeout
+  * Find the most recent config change (start from most recent snapshot if we have one)
+  * Restore state:
+  * - set last index
+  * - set last_log
+  * - set current term
+  * - set the configuration
+  """
   def init({:follower, config}) do
     {:ok, log_store} = LogStore.open(Config.db_path(config))
     timeout   = Config.election_timeout(config)
+    # state =
+    #   @default_state
+    #   |> Map.put(:log_store, log_store)
+    #   |> Map.put(:election_timeout, 30_000)
+    #   |> restore_state
+
+    # Logger.info("State has been restored")
+
+    # {:ok, :leader, state}
+
     {:ok, :follower,
       %{@default_state | log_store: log_store, election_timeout: timeout}}
   end
@@ -231,10 +233,10 @@ defmodule TonicLeader.Server do
   #   {:keep_state_and_data, [{:reply, from, value}]}
   # end
 
-  def handle_event({:call, from}, :status, current_state, %{members: members}) do
+  def handle_event({:call, from}, :status, current_state, %{configuration: configuration}) do
     status = %{
       current_state: current_state,
-      members: members,
+      configuration: configuration,
     }
     {:keep_state_and_data, [{:reply, from, status}]}
   end

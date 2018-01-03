@@ -2,10 +2,22 @@ defmodule TonicLeader.Configuration do
   defstruct [servers: [], index: 0]
 
   defmodule Server do
+    @type t :: %__MODULE__{
+      name: atom(),
+      address: atom(),
+      suffrage: :voter | :staging,
+    }
     defstruct [suffrage: :staging, name: :none, address: nil]
   end
 
   alias __MODULE__
+
+  @doc """
+  Builds a new voter server server struct.
+  """
+  def voter(name, address) do
+    %Server{name: name, address: address, suffrage: :voter}
+  end
 
   def encode(configuration) do
     Msgpax.pack!(configuration, iodata: false)

@@ -6,7 +6,7 @@ defmodule TonicLeader.Application do
   def start(_type, _args) do
     children = [
       TonicLeader.Log.InMemory,
-      # {TonicLeader.Worker, arg},
+      TonicLeader.Server.Supervisor,
     ]
 
     opts = [strategy: :one_for_one, name: TonicLeader.Supervisor]

@@ -1,12 +1,10 @@
 defmodule TonicLeader.Config do
   @enforce_keys [:name]
   defstruct [
-    members: [],
+    name: :none,
     min_election_timeout: 150,
     max_election_timeout: 300,
     heartbeat_timeout: 200,
-    group_name: :none,
-    name: :none,
     data_dir: "",
   ]
 
