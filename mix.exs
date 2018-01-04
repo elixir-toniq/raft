@@ -30,6 +30,7 @@ defmodule TonicLeader.Mixfile do
   defp deps, do: [
     {:gen_state_machine, "~> 2.0"},
     {:rocksdb, "~> 0.13.1"},
+    {:jason, "~> 1.0-rc"},
     {:msgpax, "~> 2.0"},
     {:dialyxir, "~> 0.5", only: :dev},
     {:stream_data, "~> 0.4", only: [:dev, :test]},

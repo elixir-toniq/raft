@@ -1,4 +1,5 @@
 defmodule TonicLeader.Configuration do
+  @derive Jason.Encoder
   defstruct [servers: [], index: 0]
 
   defmodule Server do
@@ -7,6 +8,8 @@ defmodule TonicLeader.Configuration do
       address: atom(),
       suffrage: :voter | :staging,
     }
+
+    @derive Jason.Encoder
     defstruct [suffrage: :staging, name: :none, address: nil]
   end
 

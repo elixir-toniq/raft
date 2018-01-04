@@ -1,31 +1,35 @@
 defmodule TonicLeader.LogStore.RocksDB do
   @behaviour TonicLeader.LogStore
-  # @spec open(path()) :: {:ok, db()} | {:error, :failed_to_open_database}
+
+  @db_logs "logs.tonic"
+  @db_conf "conf.tonic"
+
   @db_options [
     create_if_missing: true
   ]
 
+  defstruct [:logs, :conf, :path]
+
   @impl true
   def open(path) do
-    path = to_charlist(path)
-    case :rocksdb.open(path, @db_options) do
-      {:ok, db}   -> {:ok, db}
-      {:error, _} -> {:error, :failed_to_open_database}
+    with {:ok, logs} <- open_logs(path),
+         {:ok, conf} <- open_conf(path) do
+
+      {:ok, %__MODULE__{logs: logs, conf: conf, path: path}}
+    else
+      {:error, _} ->
+        {:error, :failed_to_open_database}
     end
   end
 
   @impl true
-  def close(db) do
-    :rocksdb.close(db)
+  def close(%{logs: logs, conf: conf}) do
+    :rocksdb.close(logs)
+    :rocksdb.close(conf)
   end
 
   @impl true
-  def store_logs(db, entries) do
-    # start transaction 
-    # encode index as the key
-    # encode value as message pack
-    # put the index and the value into rocks
-    # commit the transaction
+  def store_logs(%{logs: db}, entries) do
     with {:ok, batch} <- :rocksdb.batch(),
          encoded      <- encode_entries(entries),
          writes       <- add_entries_to_batch(encoded, batch) do
@@ -33,7 +37,8 @@ defmodule TonicLeader.LogStore.RocksDB do
     end
   end
 
-  def last_index(db) do
+  @impl true
+  def last_index(%{logs: db}) do
     {:ok, itr} = :rocksdb.iterator(db, [])
 
     case :rocksdb.iterator_move(itr, :last) do
@@ -46,12 +51,29 @@ defmodule TonicLeader.LogStore.RocksDB do
     end
   end
 
-  def get(db, index) do
-    case :rocksdb.get(db, encode_index(index), []) do
+  @impl true
+  def get_log(%{logs: db}, index) do
+    case :rocksdb.get(%{logs: db}, encode_index(index), []) do
       {:ok, value} -> {:ok, decode_entry(value)}
       :not_found   -> {:error, :not_found}
       error        -> {:error, error}
     end
+  end
+
+  @impl true
+  def get(%{conf: db}, key) do
+
+  end
+
+  @impl true
+  def set(%{conf: db}, key, value) do
+
+  end
+
+  @impl true
+  def destroy(%{path: path}) do
+    path |> db_logs |> File.rm_rf
+    path |> db_conf |> File.rm_rf
   end
 
   defp encode_entries(entries) do
@@ -63,15 +85,26 @@ defmodule TonicLeader.LogStore.RocksDB do
   end
 
   defp encode_entry(entry) do
-    {:binary.encode_unsigned(entry.index), Msgpax.pack!(entry, iodata: false)}
+    {:binary.encode_unsigned(entry.index), pack(entry)}
   end
 
-  def decode_entry(entry) do
-    Msgpax.unpack!(entry)
+  defp pack(entry) do
+    entry
+    |> Jason.encode!
+    |> Msgpax.pack!(iodata: false)
+  end
+
+  defp unpack!(entry) do
+    entry
+    |> Msgpax.unpack!
+    |> Jason.decode!([keys: :atoms])
+  end
+
+  defp decode_entry(entry) do
+    unpack!(entry)
   end
 
   defp decode_index(index) do
-    IO.inspect(index, label: "Index in binary")
     :binary.decode_unsigned(index)
   end
 
@@ -80,5 +113,26 @@ defmodule TonicLeader.LogStore.RocksDB do
       :ok = :rocksdb.batch_put(batch, key, value)
       batch
     end)
+  end
+
+  defp db_logs(path), do: path <> "_" <> @db_logs
+  defp db_conf(path), do: path <> "_" <> @db_conf
+
+  defp open_logs(path) do
+    path
+    |> db_logs
+    |> open_db
+  end
+
+  defp open_conf(path) do
+    path
+    |> db_conf
+    |> open_db
+  end
+
+  defp open_db(path) do
+    path
+    |> to_charlist
+    |> :rocksdb.open(@db_options)
   end
 end

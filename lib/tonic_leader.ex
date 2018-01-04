@@ -1,14 +1,5 @@
 defmodule TonicLeader do
-  # @opaque group_name :: String.t
-  # @doc """
-  # Returns all of the members of a group based on a group name
-  # """
-
-  # @spec members(group_name()) :: %{optional(atom()) => pid()}
-  # def members(group_name) do
-  # end
-
-  alias TonicLeader.{Log, LogStore, Config}
+  alias TonicLeader.{Server, Log, LogStore, Config, StableStore}
   require Logger
 
   @doc """
@@ -23,13 +14,14 @@ defmodule TonicLeader do
   Another option for starting a new cluster would be to bootstrap a single node
   as a leader and then use `add_voter/2` to add servers to the cluster.
   """
-
   def bootstrap(config, configuration) do
+    Logger.debug("Bootstrapping #{config.name}")
+
     {:ok, log_store} = LogStore.open(Config.db_path(config))
 
     # Check to see if this server already has storage; fail if it does
-    if has_data?(log_store) do
-      raise "Log data already exists for this server. Its not safe to bootstrap it"
+    if LogStore.has_data?(log_store) do
+      raise "Data already exists for this server. Its not safe to bootstrap it"
     end
 
     # Store the configuration
@@ -38,14 +30,13 @@ defmodule TonicLeader do
     :ok = LogStore.store_logs(log_store, [log])
 
     # Store the current term as 1
+    LogStore.set(log_store, "CurrentTerm", 1)
+
+    # Close the db
     LogStore.close(log_store)
 
     # Start server
     Server.Supervisor.start_server(config)
-  end
-
-  def has_data?(log_store) do
-    LogStore.last_index(log_store) > 0
   end
 
   @doc """

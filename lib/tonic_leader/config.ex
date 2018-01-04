@@ -17,7 +17,7 @@ defmodule TonicLeader.Config do
     struct(__MODULE__, valid_opts)
   end
 
-  def db_path(config), do: config |> data_dir |> Path.join("#{config.name}.tonic")
+  def db_path(config), do: config |> data_dir |> Path.join("#{config.name}")
 
   def data_dir(%{data_dir: ""}), do: :tonic_leader
                                  |> Application.app_dir()

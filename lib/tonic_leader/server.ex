@@ -17,7 +17,7 @@ defmodule TonicLeader.Server do
     current_state: state()
   }
 
-  # @default_state %State{}
+  @default_state %State{}
 
   def child_spec(opts), do: %{
     id: __MODULE__,
@@ -26,10 +26,6 @@ defmodule TonicLeader.Server do
     shutdown: 5000,
     type: :worker
   }
-
-  def bootstrap(%Config{}=config) do
-    GenStateMachine.start_link(__MODULE__, {:bootstrap, config})
-  end
 
   def start_link(%Config{}=config) do
     GenStateMachine.start_link(__MODULE__, {:follower, config})
@@ -44,6 +40,17 @@ defmodule TonicLeader.Server do
 
   def put(sm, key, value) do
     GenStateMachine.call(sm, {:put, key, value})
+  end
+
+  @doc """
+  Returns the name of the server that is believed to be the leader. This
+  is not a consistent operation and during a network partition its possible that
+  the server doesn't know who the latest elected leader is. This function should
+  be used for testing and debugging purposes only.
+  """
+  def leader(server) do
+    status = GenStateMachine.call(server, :status)
+    status[:current_leader]
   end
 
   @doc """
@@ -81,6 +88,7 @@ defmodule TonicLeader.Server do
   """
   def init({:follower, config}) do
     {:ok, log_store} = LogStore.open(Config.db_path(config))
+
     timeout   = Config.election_timeout(config)
     # state =
     #   @default_state
@@ -233,10 +241,11 @@ defmodule TonicLeader.Server do
   #   {:keep_state_and_data, [{:reply, from, value}]}
   # end
 
-  def handle_event({:call, from}, :status, current_state, %{configuration: configuration}) do
+  def handle_event({:call, from}, :status, current_state, state) do
     status = %{
       current_state: current_state,
-      configuration: configuration,
+      current_leader: state.current_leader,
+      configuration: state.configurations.latest,
     }
     {:keep_state_and_data, [{:reply, from, status}]}
   end
