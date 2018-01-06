@@ -16,7 +16,7 @@ defmodule TonicLeader.LogStore do
 
   @callback get(db(), key()) :: {:ok, value()} | {:error, any()}
 
-  @callback set(db(), key(), value()) :: {:ok, value()} | {:error, any()}
+  @callback set(db(), key(), value()) :: :ok | {:error, any()}
 
   @callback destroy(db()) :: :ok | {:error, any()}
 
@@ -80,7 +80,14 @@ defmodule TonicLeader.LogStore do
   Gets a value from the k/v store.
   """
   def get(db, key) do
-    adapter().get(db, key)
+    case adapter().get(db, key) do
+      {:ok, value} ->
+        {:ok, value}
+      {:error, :not_found} ->
+        {:ok, nil}
+      {:error, error} ->
+        {:error, error}
+    end
   end
 
   @doc """

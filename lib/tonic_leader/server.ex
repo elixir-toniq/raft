@@ -2,6 +2,12 @@ defmodule TonicLeader.Server do
   use GenStateMachine, callback_mode: :state_functions
 
   alias TonicLeader.{RPC, Log, LogStore, Config, Configuration}
+  alias TonicLeader.RPC.{
+    AppendEntriesReq,
+    AppendEntriesResp,
+    RequestVoteReq,
+    RequestVoteResp,
+  }
   alias TonicLeader.Server.State
 
   require Logger
@@ -18,6 +24,9 @@ defmodule TonicLeader.Server do
   }
 
   @current_term "CurrentTerm"
+  @voted_for "VotedFor"
+  @last_vote_term "LastVoteTerm"
+  @last_vote_cand "LastVoteCand"
 
   def child_spec(opts), do: %{
     id: __MODULE__,
@@ -28,11 +37,11 @@ defmodule TonicLeader.Server do
   }
 
   def start_link(%Config{}=config) do
-    GenStateMachine.start_link(__MODULE__, {:follower, config})
+    GenStateMachine.start_link(__MODULE__, {:follower, config}, name: config.name)
   end
-  def start_link(opts) do
-    GenStateMachine.start_link(__MODULE__, {:follower, Config.new(opts)})
-  end
+  # def start_link(opts) do
+  #   GenStateMachine.start_link(__MODULE__, {:follower, Config.new(opts)})
+  # end
 
   def get(sm, key) do
     GenStateMachine.call(sm, {:get, key})
@@ -87,19 +96,19 @@ defmodule TonicLeader.Server do
   * - set the configuration
   """
   def init({:follower, config}) do
-    Logger.debug("Starting #{config.name}")
+    Logger.info("Starting #{config.name}")
     {:ok, log_store} = LogStore.open(Config.db_path(config))
 
-    Logger.debug("Restoring old state", metadata: config.name)
+    Logger.info("Restoring old state", metadata: config.name)
 
-    current_term  = LogStore.get_current_term(log_store)
-    last_index    = LogStore.last_index(log_store)
-    start_index   = 1 # TODO: This should be the index of the last snapshot if there is one
-    logs          = LogStore.slice(log_store, start_index..last_index)
-    configuration = Configuration.restore(logs)
-    state         = State.new(config, log_store, last_index, current_term, configuration)
+    {:ok, current_term} = LogStore.get_current_term(log_store)
+    last_index          = LogStore.last_index(log_store)
+    start_index         = 1 # TODO: This should be the index of the last snapshot if there is one
+    logs                = LogStore.slice(log_store, start_index..last_index)
+    configuration       = Configuration.restore(logs)
+    state               = State.new(config, log_store, last_index, current_term, configuration)
 
-    Logger.debug("State has been restored", [server: config.name])
+    Logger.info("State has been restored", [server: config.name])
     {:ok, :follower, start_next_election_timeout(state)}
   end
 
@@ -191,7 +200,34 @@ defmodule TonicLeader.Server do
     {:keep_state_and_data, [{:reply, from, {:error, :not_leader}}]}
   end
 
+  def candidate(:cast, %RequestVoteResp{}=resp, state) do
+    state = State.add_vote(state, resp)
+
+    cond do
+      resp.term > state.current_term ->
+        Logger.debug("Newer term discovered, falling back to follower")
+        {:next_state, :follower, %{state | current_term: resp.term}}
+      State.majority?(state) ->
+        Logger.info("Election won. Tally: #{state.votes}")
+        state
+        |> State.other_servers
+        |> Enum.map(heartbeat(state))
+        |> RPC.broadcast
+
+        state = %{state | current_leader: state.config.name}
+
+        {:next_state, :leader, state}
+      true ->
+        Logger.debug(
+          "Vote granted from #{resp.from} to #{state.config.name} in term #{state.current_term}. " <>
+          "Tally: #{state.votes}"
+        )
+        {:next_state, :candidate, state}
+    end
+  end
+
   def candidate(msg, event, data) do
+    # Logger.warn("Got a message as a candidate, #{inspect event}")
     handle_event(msg, event, :candidate, data)
   end
 
@@ -211,6 +247,7 @@ defmodule TonicLeader.Server do
 
   def handle_event({:call, from}, :status, current_state, state) do
     status = %{
+      name: state.config.name,
       current_state: current_state,
       current_leader: state.current_leader,
       configuration: state.configuration,
@@ -218,10 +255,68 @@ defmodule TonicLeader.Server do
     {:keep_state_and_data, [{:reply, from, status}]}
   end
 
-  def handle_event(:info, :election_timeout, :follower, state) do
-    Logger.info("Election timeout #{state.config.name}")
+  def handle_event(:cast, %AppendEntriesReq{}=req, current_state, state) do
+    state = %{state | current_leader: req.leader_id}
+    state = start_next_election_timeout(state)
+    {:next_state, :follower, state}
+  end
 
-    {:next_state, :candidate, state}
+  def handle_event(:cast, %RequestVoteReq{}=req, current_state, state) do
+    with {:ok, last_vote_term} <- LogStore.get(state.log_store, @last_vote_term),
+         {:ok, last_vote_cand} <- LogStore.get(state.log_store, @last_vote_cand) do
+
+      vote_granted =
+        cond do
+          req.term < state.current_term -> # Their term is behind ours
+            false
+          last_vote_term == req.term && # We've alredy voted in this term
+          not is_nil(last_vote_cand) &&
+          last_vote_cand != req.candidate_id ->
+            false
+          # up_to_date TODO: Check to ensure the logs are up to date
+          true -> # Otherwise grant our vote
+            true
+        end
+
+      to =
+        state.configuration.servers
+        |> Enum.find(& &1.name == req.candidate_id)
+
+      case persist_vote(state.log_store, req.term, req.candidate_id) do
+        :ok ->
+          # TODO: Make all of these defaults or something so its cleaner
+          resp = %RequestVoteResp{
+            to: to,
+            from: state.config.name,
+            term: state.current_term,
+            vote_granted: vote_granted,
+          }
+          RPC.send_msg(resp)
+        {:error, error} ->
+          Logger.error("Failed to persist vote: #{error}")
+      end
+    else
+      {:error, error} ->
+        Logger.error("Error while casting vote: #{error}")
+    end
+
+    {:keep_state_and_data, []}
+  end
+
+  def handle_event(:info, :election_timeout, :follower, state) do
+    Logger.warn("Timeout reached. Starting Election")
+
+    state = State.increment_term(state)
+    :ok = vote_for_myself(state)
+
+    state
+    |> State.other_servers
+    |> Enum.map(request_vote(state))
+    |> RPC.broadcast
+
+    start_next_election_timeout(state)
+
+    {:next_state, :candidate, State.increment_term(state)}
   end
 
   def handle_event(event_type, event, state, data) do
@@ -233,6 +328,43 @@ defmodule TonicLeader.Server do
   defp start_next_election_timeout(state) do
     State.next_election_timeout state, fn timeout ->
       Process.send_after(self(), :election_timeout, timeout)
+    end
+  end
+
+  defp vote_for_myself(state) do
+    persist_vote(state.log_store, state.current_term, state.config.name)
+  end
+
+  defp persist_vote(log_store, term, candidate) do
+    with :ok <- LogStore.set(log_store, @last_vote_term, term),
+         :ok <- LogStore.set(log_store, @last_vote_cand, candidate) do
+      :ok
+    end
+  end
+
+  defp request_vote(state) do
+    fn server ->
+      %RPC.RequestVoteReq{
+        to: server,
+        term: state.current_term,
+        candidate_id: state.config.name,
+        last_log_index: state.last_index,
+        last_log_term: %{},
+      }
+    end
+  end
+
+  defp heartbeat(state) do
+    fn server ->
+      %RPC.AppendEntriesReq{
+        to: server,
+        leader_id: state.config.name,
+        prev_log_index: 0,
+        prev_log_term: 0,
+        leader_commit: 0,
+        term: state.current_term,
+        entries: [],
+      }
     end
   end
 end

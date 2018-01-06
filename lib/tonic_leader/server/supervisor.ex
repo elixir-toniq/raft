@@ -13,7 +13,6 @@ defmodule TonicLeader.Server.Supervisor do
   def start_server(config) do
     Supervisor.start_child(__MODULE__, [config])
   end
-
   def init(_arg) do
     child = Supervisor.child_spec(Server, start: {Server, :start_link, []})
 

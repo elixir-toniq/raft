@@ -45,13 +45,20 @@ defmodule TonicLeaderTest do
     end
   end
 
+  test "leader failure" do
+
+  end
+
   def wait_for_election(servers) do
-    case Enum.find(servers, fn server -> Server.status(server).current_state == :leader end) do
+    servers
+    |> Enum.map(&Server.status/1)
+    |> Enum.find(& &1.current_state == :leader)
+    |> case do
       nil ->
         :timer.sleep(200)
         wait_for_election(servers)
       leader ->
-        leader
+        leader.name
     end
   end
 end

@@ -17,6 +17,8 @@ defmodule TonicLeader.Configuration do
       address: String.to_existing_atom(server.address),
       name: String.to_existing_atom(server.name),
     }
+
+    def to_server(server), do: {server.name, server.address}
   end
 
   alias __MODULE__
@@ -27,6 +29,16 @@ defmodule TonicLeader.Configuration do
   """
   def voter(name, address) do
     %Server{name: name, address: address, suffrage: :voter}
+  end
+
+  def quorum(configuration) do
+    count =
+      configuration
+      |> Map.get(:servers)
+      |> Enum.filter(& &1.suffrage == :voter)
+      |> Enum.count
+
+    div(count, 2)+1
   end
 
   def encode(configuration) do

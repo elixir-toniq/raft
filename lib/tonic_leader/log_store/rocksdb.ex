@@ -63,21 +63,33 @@ defmodule TonicLeader.LogStore.RocksDB do
   @impl true
   def get(%{conf: db}, key) do
     case :rocksdb.get(db, key, []) do
-      {:ok, value} -> {:ok, decode_entry(value)}
+      {:ok, value} -> {:ok, decode(value)}
       :not_found   -> {:error, :not_found}
       error        -> {:error, error}
     end
   end
 
   @impl true
-  def set(%{conf: db}, key, value) do
-
+  def set(%{conf: db}, key, value) when is_binary(key) do
+    case :rocksdb.put(db, key, encode(value), []) do
+      :ok -> :ok
+      error -> {:error, error}
+    end
   end
 
   @impl true
   def destroy(%{path: path}) do
     path |> db_logs |> File.rm_rf
     path |> db_conf |> File.rm_rf
+  end
+
+  # TODO: decode and encode need to be protocols and removed from this module
+  defp decode(value) do
+    :binary.decode_unsigned(value)
+  end
+
+  defp encode(value) do
+    to_string(value)
   end
 
   defp encode_entries(entries) do
