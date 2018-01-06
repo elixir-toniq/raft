@@ -53,7 +53,7 @@ defmodule TonicLeader.LogStore.RocksDB do
 
   @impl true
   def get_log(%{logs: db}, index) do
-    case :rocksdb.get(%{logs: db}, encode_index(index), []) do
+    case :rocksdb.get(db, encode_index(index), []) do
       {:ok, value} -> {:ok, decode_entry(value)}
       :not_found   -> {:error, :not_found}
       error        -> {:error, error}
@@ -62,7 +62,11 @@ defmodule TonicLeader.LogStore.RocksDB do
 
   @impl true
   def get(%{conf: db}, key) do
-
+    case :rocksdb.get(db, key, []) do
+      {:ok, value} -> {:ok, decode_entry(value)}
+      :not_found   -> {:error, :not_found}
+      error        -> {:error, error}
+    end
   end
 
   @impl true

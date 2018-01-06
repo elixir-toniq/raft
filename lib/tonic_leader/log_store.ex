@@ -20,6 +20,10 @@ defmodule TonicLeader.LogStore do
 
   @callback destroy(db()) :: :ok | {:error, any()}
 
+  @callback last_index(db()) :: {:ok, index()} | {:error, any()}
+
+  @current_term "CurrentTerm"
+
   @doc """
   Opens a new or existing database at the given path.
   """
@@ -35,11 +39,27 @@ defmodule TonicLeader.LogStore do
   end
 
   @doc """
+  Gets the current term
+  """
+  def get_current_term(db) do
+    adapter().get(db, @current_term)
+  end
+
+  @doc """
   Retrieves the last index thats been saved to stable storage.
   If the database is empty then 0 is returned.
   """
   def last_index(db) do
     adapter().last_index(db)
+  end
+
+  @doc """
+  Gets all logs from starting index to end index inclusive.
+  """
+  def slice(db, range) do
+    range
+    |> Enum.map(& adapter().get_log(db, &1))
+    |> Enum.map(fn {:ok, value} -> value end)
   end
 
   @doc """

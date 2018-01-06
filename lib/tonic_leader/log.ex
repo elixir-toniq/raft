@@ -39,7 +39,7 @@ defmodule TonicLeader.Log do
   """
   def configuration(index, term, configuration) do
     %{
-      type: :config_change,
+      type: Entry.type(:config_change),
       data: configuration,
       index: index,
       term: term,

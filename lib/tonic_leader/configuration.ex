@@ -1,6 +1,6 @@
 defmodule TonicLeader.Configuration do
   @derive Jason.Encoder
-  defstruct [servers: [], index: 0]
+  defstruct [servers: [], index: 0, latest: %{}]
 
   defmodule Server do
     @type t :: %__MODULE__{
@@ -11,9 +11,16 @@ defmodule TonicLeader.Configuration do
 
     @derive Jason.Encoder
     defstruct [suffrage: :staging, name: :none, address: nil]
+
+    def to_struct(server), do: %__MODULE__{
+      suffrage: String.to_existing_atom(server.suffrage),
+      address: String.to_existing_atom(server.address),
+      name: String.to_existing_atom(server.name),
+    }
   end
 
   alias __MODULE__
+  alias TonicLeader.Log.Entry
 
   @doc """
   Builds a new voter server server struct.
@@ -23,11 +30,33 @@ defmodule TonicLeader.Configuration do
   end
 
   def encode(configuration) do
-    Msgpax.pack!(configuration, iodata: false)
+    configuration
+    |> Jason.encode!
+    |> Msgpax.pack!(iodata: false)
   end
 
   def decode(configuration) do
-    Msgpax.pack!(configuration, iodata: false)
+    configuration
+    |> Msgpax.unpack!
+    |> Jason.decode!([keys: :atoms])
+  end
+
+  defp to_struct(configuration) do
+    configuration
+    |> Map.put(:servers, Enum.map(configuration.servers, &Server.to_struct/1))
+  end
+
+  def restore(logs) do
+    logs
+    |> Enum.filter(& Entry.type(&1) == :config_change)
+    |> Enum.reduce(%Configuration{}, &rebuild_configuration/2)
+    |> to_struct
+  end
+
+  def rebuild_configuration(log, configuration) do
+    configuration
+    |> Map.put(:servers, log.data.servers)
+    |> Map.put(:index, log.data.index)
   end
 
   def next(%{prev_index: prev_i}, %{index: i}) when prev_i != i do

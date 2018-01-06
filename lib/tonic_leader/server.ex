@@ -17,7 +17,7 @@ defmodule TonicLeader.Server do
     current_state: state()
   }
 
-  @default_state %State{}
+  @current_term "CurrentTerm"
 
   def child_spec(opts), do: %{
     id: __MODULE__,
@@ -87,58 +87,33 @@ defmodule TonicLeader.Server do
   * - set the configuration
   """
   def init({:follower, config}) do
+    Logger.debug("Starting #{config.name}")
     {:ok, log_store} = LogStore.open(Config.db_path(config))
 
-    timeout   = Config.election_timeout(config)
-    # state =
-    #   @default_state
-    #   |> Map.put(:log_store, log_store)
-    #   |> Map.put(:election_timeout, 30_000)
-    #   |> restore_state
+    Logger.debug("Restoring old state", metadata: config.name)
 
-    # Logger.info("State has been restored")
+    current_term  = LogStore.get_current_term(log_store)
+    last_index    = LogStore.last_index(log_store)
+    start_index   = 1 # TODO: This should be the index of the last snapshot if there is one
+    logs          = LogStore.slice(log_store, start_index..last_index)
+    configuration = Configuration.restore(logs)
+    state         = State.new(config, log_store, last_index, current_term, configuration)
 
-    # {:ok, :leader, state}
-
-    {:ok, :follower,
-      %{@default_state | log_store: log_store, election_timeout: timeout}}
-  end
-
-  def restore_state(%{log_store: log_store}=state) do
-    Logger.info("Restoring old state")
-
-    index = LogStore.last_index(log_store)
-    last_log = LogStore.get(log_store, index)
-    current_term = :rocksdb.get(log_store, "CurrentTerm", [])
-
-    Logger.info("Getting all logs")
-
-    state =
-      1..index
-      |> Enum.map(& LogStore.get(log_store, &1))
-      |> Enum.map(fn {:ok, value} -> value end)
-      |> Enum.filter(& &1["type"] == "config_change")
-      |> Enum.reduce(state, &update_configuration/2)
-
-    Logger.info("Got config change logs")
-
-    state
-    |> Map.put(:last_index, index)
-    |> Map.put(:current_term, 1)
-  end
-
-  def update_configuration(config, state) do
-    new_configurations =
-      state.configurations
-      |> put_in([:latest], config["data"])
-      |> put_in([:latest_index], config["index"])
-
-    %{state | configurations: new_configurations}
+    Logger.debug("State has been restored", [server: config.name])
+    {:ok, :follower, start_next_election_timeout(state)}
   end
 
   def has_data?(log_store) do
     LogStore.last_index(log_store) > 0
   end
+
+  @doc """
+  Sets the "commitment" for the server. i.e. how many servers need to vote
+  in order to gain a majority. Resets the match_indexes for each server.
+  """
+  def set_configuration(config) do
+  end
+
 
   #
   # Leader callbacks
@@ -170,13 +145,6 @@ defmodule TonicLeader.Server do
       {:error, e} ->
         {:error, e}
     end
-  end
-
-  @doc """
-  Sets the "commitment" for the server. i.e. how many servers need to vote
-  in order to gain a majority. Resets the match_indexes for each server.
-  """
-  def set_configuration(config) do
   end
 
   def leader({:call, _from}, {:add_voter, voter}, state) do
@@ -245,18 +213,27 @@ defmodule TonicLeader.Server do
     status = %{
       current_state: current_state,
       current_leader: state.current_leader,
-      configuration: state.configurations.latest,
+      configuration: state.configuration,
     }
     {:keep_state_and_data, [{:reply, from, status}]}
   end
 
-  def handle_event(:cast, :election_timeout, :follower, data) do
-    new_data = data
-    {:next_state, :candidate, new_data}
+  def handle_event(:info, :election_timeout, :follower, state) do
+    Logger.info("Election timeout #{state.config.name}")
+
+    {:next_state, :candidate, state}
   end
 
   def handle_event(event_type, event, state, data) do
-    IO.inspect([event_type, event, state, data])
+    Logger.debug("Unhandled event, #{event_type}, #{event}, #{state}")
+
+    {:keep_state_and_data, []}
+  end
+
+  defp start_next_election_timeout(state) do
+    State.next_election_timeout state, fn timeout ->
+      Process.send_after(self(), :election_timeout, timeout)
+    end
   end
 end
 

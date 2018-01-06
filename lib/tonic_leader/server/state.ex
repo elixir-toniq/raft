@@ -1,16 +1,19 @@
 defmodule TonicLeader.Server.State do
-  alias TonicLeader.Log
+  alias TonicLeader.{Log, Config, Configuration}
   alias __MODULE__
 
   defstruct [
-    configurations: %{
-      latest: nil,
-      latest_index: 0,
-      servers: [],
-    },
+    # configurations: %{
+    #   latest: nil,
+    #   latest_index: 0,
+    #   servers: [],
+    # },
+    config: nil,
+    configuration: %Configuration{},
     current_leader: :none,
     current_term: 0,
     election_timeout: 0,
+    election_timer: nil,
     last_index: 0,
     log: %Log{},
     log_store: nil,
@@ -18,7 +21,21 @@ defmodule TonicLeader.Server.State do
     match_index: nil, # for each server, index of highest log entry known to be replicated on server
   ]
 
-  def latest_index(state) do
+  def new(config, log_store, last_index, current_term, configuration) do
+    %__MODULE__{}
+    |> Map.put(:config, config)
+    |> Map.put(:log_store, log_store)
+    |> Map.put(:last_index, last_index)
+    |> Map.put(:current_term, current_term)
+    |> Map.put(:configuration, configuration)
+  end
+
+  def next_election_timeout(state, cb) do
+    timeout = Config.election_timeout(state.config)
+    %State{state | election_timer: cb.(timeout)}
+  end
+
+  def last_index(state) do
     state.latest_index
   end
 end

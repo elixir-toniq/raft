@@ -43,12 +43,19 @@ defmodule TonicLeader.ServerTest do
 
   test "Followers start an election if they don't receive rpcs within the timeout" do
     config = Config.new([
-      members: [self()],
       election_timeout_min: 0,
       election_timeout_max: 1
     ])
 
-    {:ok, _s1} = Server.start_link(config)
+    configuration = %Configuration{
+      servers: [
+        Configuration.voter(:s1, node()),
+        Configuration.voter(:s2, self()),
+      ],
+      index: 1,
+    }
+
+    {:ok, _s1} = Server.start_link(config, configuration)
 
     assert_received {:request_vote, 1}
   end
