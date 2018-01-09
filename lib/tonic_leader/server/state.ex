@@ -8,13 +8,20 @@ defmodule TonicLeader.Server.State do
     #   latest_index: 0,
     #   servers: [],
     # },
+    me: nil,
     config: nil,
     configuration: %Configuration{},
     current_leader: :none,
     current_term: 0,
+    client_reqs: [],
     election_timeout: 0,
     election_timer: nil,
+    leader: :none,
+    followers: [],
+    init_config: :complete,
+    timer: nil,
     last_index: 0,
+    commit_index: 0,
     log: %Log{},
     log_store: nil,
     next_index: nil, #only used for the leader, index of the next log entry to send to a server
@@ -35,7 +42,7 @@ defmodule TonicLeader.Server.State do
     Map.update!(state, :current_term, & &1+1)
   end
 
-  def next_election_timeout(state, cb) do
+  def reset_timeout(state, cb) do
     if state.election_timer do
       Process.cancel_timer(state.election_timer)
     end
@@ -44,11 +51,13 @@ defmodule TonicLeader.Server.State do
     %State{state | election_timeout: timeout, election_timer: cb.(timeout)}
   end
 
-  def other_servers(state) do
-    state
-    |> Map.get(:configuration)
-    |> Map.get(:servers)
-    |> Enum.reject(& &1.name == state.config.name)
+  def next_election_timeout(state, cb) do
+    if state.election_timer do
+      Process.cancel_timer(state.election_timer)
+    end
+
+    timeout = Config.election_timeout(state.config)
+    %State{state | election_timeout: timeout, election_timer: cb.(timeout)}
   end
 
   def last_index(state) do

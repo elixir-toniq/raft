@@ -39,6 +39,26 @@ defmodule TonicLeader.LogStore do
   end
 
   @doc """
+  Gets all metadata from the store.
+  """
+  def get_metadata(db) do
+    case adapter().get_metadata(db) do
+      {:ok, metadata} ->
+        metadata
+      _ ->
+        %{term: 0, voted_for: nil}
+    end
+  end
+
+  def get_config(db) do
+    %TonicLeader.Configuration{}
+  end
+
+  def write_metadata(db, meta) do
+    adapter().put_metadata(db, meta)
+  end
+
+  @doc """
   Gets the current term
   """
   def get_current_term(db) do
@@ -74,6 +94,12 @@ defmodule TonicLeader.LogStore do
   """
   def store_logs(db, entries) do
     adapter().store_logs(db, entries)
+  end
+
+  def append(db, entries) do
+    :ok = adapter().store_logs(db, entries)
+    last_index = adapter().last_index(db)
+    {:ok, last_index}
   end
 
   @doc """

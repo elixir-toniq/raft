@@ -1,6 +1,18 @@
 defmodule TonicLeader.Configuration do
   @derive Jason.Encoder
-  defstruct [servers: [], index: 0, latest: %{}]
+  defstruct [state: :none, old_servers: [], new_servers: [], index: 0, latest: %{}]
+
+  @type peer :: atom() | {atom(), atom()}
+  @type config_state :: :none
+                      | :stable
+                      | :staging
+                      | :transitional
+
+  @type t :: %__MODULE__{
+    state: config_state(),
+    old_servers: list(),
+    new_servers: list(),
+  }
 
   defmodule Server do
     @type t :: %__MODULE__{
@@ -18,11 +30,51 @@ defmodule TonicLeader.Configuration do
       name: String.to_existing_atom(server.name),
     }
 
-    def to_server(server), do: {server.name, server.address}
+    def to_server(server), do: server
   end
 
   alias __MODULE__
   alias TonicLeader.Log.Entry
+
+  @doc """
+  Does the server have a vote.
+  """
+  @spec has_vote?(Configuration.t) :: boolean()
+
+  def has_vote?(%{state: :none}), do: false
+
+  @doc """
+  Is the peer a member of the configuration.
+  """
+  @spec member?(Configuration.t, peer()) :: boolean()
+
+  def member?(_configuration, _peer) do
+    false
+  end
+
+  @doc """
+  Reconfigures the configuration with new servers. If the configuration state is
+  `:none` then it moves directly into a stable configuration. Otherwise it
+  starts to transition to a new configuration.
+  """
+  @spec reconfig(Configuration.t, list()) :: Configuration.t
+
+  def reconfig(%{state: :none}=config, new_servers) do
+    %{config | state: :stable, old_servers: new_servers}
+  end
+
+  def reconfig(%{state: :stable}=config, new_servers) do
+    %{config | state: :transitional, new_servers: new_servers}
+  end
+
+  @doc """
+  Gets a list of followers
+  """
+  @spec followers(Config.t, peer()) :: [Server.t]
+
+  def followers(%{state: :stable, old_servers: servers}, peer) do
+    Enum.reject(servers, & &1 == peer)
+  end
 
   @doc """
   Builds a new voter server server struct.
@@ -31,14 +83,34 @@ defmodule TonicLeader.Configuration do
     %Server{name: name, address: address, suffrage: :voter}
   end
 
-  def quorum(configuration) do
+  def quorum(%{state: :stable, old_servers: servers}) do
     count =
-      configuration
-      |> Map.get(:servers)
-      |> Enum.filter(& &1.suffrage == :voter)
+      servers
       |> Enum.count
 
     div(count, 2)+1
+  end
+
+  @doc """
+  Determines if we have a majority based on the current configuration.
+  """
+  def majority?(configuration, votes) do
+    Enum.count(votes) >= quorum(configuration)
+  end
+
+  @doc """
+  Gets the maximum index for which we have a quorum.
+  """
+  @spec quorum_max(Configuration.t, map()) :: non_neg_integer()
+
+  def quorum_max(configuration, indexes) do
+    {value, _votes} =
+      indexes
+      |> Enum.group_by(fn {_, vote} -> vote end)
+      |> IO.inspect(label: "grouped")
+      |> Enum.sort_by(fn {_v, votes} -> Enum.count(votes) end, &>=/2)
+      |> IO.inspect(label: "sorted")
+      |> Enum.find(fn {_v, votes} -> majority?(configuration, votes) end)
   end
 
   def encode(configuration) do
@@ -55,7 +127,7 @@ defmodule TonicLeader.Configuration do
 
   defp to_struct(configuration) do
     configuration
-    |> Map.put(:servers, Enum.map(configuration.servers, &Server.to_struct/1))
+    |> Map.put(:old_servers, Enum.map(configuration.old_servers, &Server.to_struct/1))
   end
 
   def restore(logs) do
@@ -67,7 +139,7 @@ defmodule TonicLeader.Configuration do
 
   def rebuild_configuration(log, configuration) do
     configuration
-    |> Map.put(:servers, log.data.servers)
+    |> Map.put(:old_servers, log.data.old_servers)
     |> Map.put(:index, log.data.index)
   end
 
@@ -86,17 +158,17 @@ defmodule TonicLeader.Configuration do
     }
     server_i = Enum.find_index(config.servers, & &1.name == change.name)
     servers = List.update_at(config.servers, server_i, maybe_add_server(new_server))
-    %Configuration{config | servers: servers}
+    %Configuration{config | old_servers: servers}
   end
 
   def next(:promote, config, change) do
     servers = Enum.map(config.servers, maybe_promote_server(change.name))
-    %Configuration{config | servers: servers}
+    %Configuration{config | old_servers: servers}
   end
 
   def next(:remove_server, config, change) do
     new_servers = Enum.reject(config.servers, & change.name == &1.name)
-    %Configuration{config | servers: new_servers}
+    %Configuration{config | old_servers: new_servers}
   end
 
   defp maybe_promote_server(name) do

@@ -3,7 +3,6 @@ defmodule TonicLeader.Log do
 
   alias __MODULE__
   alias TonicLeader.Log.Entry
-  alias TonicLeader.Server.State
 
   @typep index :: pos_integer()
   @typep member :: pid()
@@ -39,10 +38,10 @@ defmodule TonicLeader.Log do
   """
   def configuration(index, term, configuration) do
     %{
-      type: Entry.type(:config_change),
-      data: configuration,
-      index: index,
+      type: Entry.type(:config),
       term: term,
+      index: index,
+      data: configuration,
     }
   end
 

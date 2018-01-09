@@ -3,10 +3,12 @@ defmodule TonicLeader.LogStore.RocksDB do
 
   @db_logs "logs.tonic"
   @db_conf "conf.tonic"
+  @metadata "metadata"
 
   @db_options [
     create_if_missing: true
   ]
+
 
   defstruct [:logs, :conf, :path]
 
@@ -54,6 +56,21 @@ defmodule TonicLeader.LogStore.RocksDB do
   @impl true
   def get_log(%{logs: db}, index) do
     case :rocksdb.get(db, encode_index(index), []) do
+      {:ok, value} -> {:ok, decode_entry(value)}
+      :not_found   -> {:error, :not_found}
+      error        -> {:error, error}
+    end
+  end
+
+  def write_metadata(%{conf: db}, meta) do
+    case :rocksdb.put(db, "metadata", encode_entry(meta), []) do
+      :ok -> :ok
+      error -> {:error, error}
+    end
+  end
+
+  def get_metadata(%{conf: db}) do
+    case :rocksdb.get(db, @metadata, []) do
       {:ok, value} -> {:ok, decode_entry(value)}
       :not_found   -> {:error, :not_found}
       error        -> {:error, error}

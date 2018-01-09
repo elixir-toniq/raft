@@ -1,6 +1,6 @@
 defmodule TonicLeader.Config do
-  @enforce_keys [:name]
   defstruct [
+    state_machine: :none,
     name: :none,
     min_election_timeout: 150,
     max_election_timeout: 300,
@@ -17,7 +17,7 @@ defmodule TonicLeader.Config do
     struct(__MODULE__, valid_opts)
   end
 
-  def db_path(config), do: config |> data_dir |> Path.join("#{config.name}")
+  def db_path(name, config), do: config |> data_dir |> Path.join("#{name}")
 
   def data_dir(%{data_dir: ""}), do: :tonic_leader
                                  |> Application.app_dir()

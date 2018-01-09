@@ -4,4 +4,4 @@ config :tonic_leader,
   log_adapter: TonicLeader.Log.InMemory
 
 config :logger,
-  level: :warn
+  level: :debug

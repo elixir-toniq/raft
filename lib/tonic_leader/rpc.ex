@@ -1,6 +1,7 @@
 defmodule TonicLeader.RPC do
-  alias TonicLeader.Log
   alias TonicLeader.Configuration.Server
+
+  require Logger
 
   @type server :: pid()
   @type msg :: AppendEntriesReq
@@ -13,6 +14,7 @@ defmodule TonicLeader.RPC do
     defstruct [
       :to, #Who we're sening this to
       :term, # Leaders current term
+      :from, # Who sent this
       :leader_id, # We need this so we can respond to the correct pid and so 
                   # followers can redirect clients
       :entries, # Log entries to store. This is empty for heartbeats
@@ -27,6 +29,8 @@ defmodule TonicLeader.RPC do
       :to,
       :from, # We need this so we can track who sent us the message
       :term, # The current term for the leader to update itself
+      :index, # The index we're at. Used to prevent re-commits with duplicate
+              # Rpcs.
       :success, # true if follower contained entry matching prev_log_index and
                 # prev_log_term
     ]
@@ -36,6 +40,7 @@ defmodule TonicLeader.RPC do
     defstruct [
       :to, # Who we're going to send this to. A %Server{}
       :term, # candidates term
+      :from, # Who sent this message
       :candidate_id, # candidate requesting vote
       :last_log_index, # index of candidates last log entry
       :last_log_term, # term of candidates last log entry
@@ -51,12 +56,12 @@ defmodule TonicLeader.RPC do
     ]
   end
 
-  def replicate(state, log) do
-    state.configurations.latest.servers
-    |> Enum.reject(self())
-    |> Enum.map(append_entries(log))
-    |> Enum.each(&send_msg/1)
-  end
+  # def replicate(state, log) do
+  #   state.configurations.latest.servers
+  #   |> Enum.reject(self())
+  #   |> Enum.map(append_entries(log))
+  #   |> Enum.each(&send_msg/1)
+  # end
 
   def broadcast(rpcs) do
     Enum.map(rpcs, &send_msg/1)
@@ -67,23 +72,35 @@ defmodule TonicLeader.RPC do
   """
   @spec send_msg(msg()) :: :ok
 
-  def send_msg(rpc) do
-    rpc.to
-    |> Server.to_server
-    |> GenStateMachine.cast(rpc)
-  end
-
-  defp append_entries(log) do
-    fn member ->
-      entries = Log.from_index(log, member.next_index)
-      req = %AppendEntriesReq{
-        leader_id: self(),
-        entries: entries,
-        prev_log_index: nil,
-        prev_log_term: nil,
-        leader_commit: nil,
-      }
-      {member, req}
+  def send_msg(%{from: from, to: to}=rpc) do
+    spawn fn ->
+      to
+      |> Server.to_server
+      |> GenStateMachine.call(rpc)
+      |> case do
+        %AppendEntriesResp{}=resp ->
+          GenStateMachine.cast(from, resp)
+        %RequestVoteResp{}=resp ->
+          GenStateMachine.cast(from, resp)
+        error ->
+          Logger.error fn ->
+            "Error sending #{inspect rpc} to #{to} from #{from}"
+          end
+      end
     end
   end
+
+  # defp append_entries(log) do
+  #   fn member ->
+  #     entries = Log.from_index(log, member.next_index)
+  #     req = %AppendEntriesReq{
+  #       leader_id: self(),
+  #       entries: entries,
+  #       prev_log_index: nil,
+  #       prev_log_term: nil,
+  #       leader_commit: nil,
+  #     }
+  #     {member, req}
+  #   end
+  # end
 end

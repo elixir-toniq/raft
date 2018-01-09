@@ -8,7 +8,7 @@ defmodule TonicLeader.Log.Entry do
   @type type  :: :command
                | :leader_elected
                | :add_follower
-               | :config_change
+               | :config
                # TODO Implement these
                # | :remove_follower
                # | :configuration_change
@@ -25,7 +25,7 @@ defmodule TonicLeader.Log.Entry do
     command: 0,
     leader_elected: 1,
     add_follower: 2,
-    config_change: 3,
+    config: 3,
     # TODO Implement these
     # | :remove_follower
     # | :configuration_change
@@ -37,13 +37,13 @@ defmodule TonicLeader.Log.Entry do
     %__MODULE__{index: index, term: term, type: :add_member, data: member}
   end
 
-  def configuration?(entry), do: type(entry) == :config_change
+  def configuration?(entry), do: type(entry) == :config
 
   @doc """
   The type of log.
   """
   def type(%{type: type}) do
-    {name, _} = Enum.find(@log_types, fn {name, i} -> type == i end)
+    {name, _} = Enum.find(@log_types, fn {_, i} -> type == i end)
     name
   end
 

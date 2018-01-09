@@ -1,6 +1,37 @@
 defmodule TonicLeader do
-  alias TonicLeader.{Server, Log, LogStore, Config, StableStore}
+  alias TonicLeader.{Server, Log, LogStore, Config}
   require Logger
+
+  @type peer :: atom() | {atom(), atom()}
+
+  @doc """
+  Starts a new peer with a given Config.t.
+  """
+  @spec start_node(peer(), Config.t) :: {:ok, term()} | {:error, term()}
+
+  def start_node(name, opts) do
+    TonicLeader.Server.Supervisor.start_peer(name, opts)
+  end
+
+  @doc """
+  Returns the leader according to the given peer.
+  """
+  @spec leader(peer()) :: peer() | :none
+
+  def leader(name) do
+    Server.leader(name)
+  end
+
+  @doc """
+  Sets peers configuration. The new configuration will be merged with any
+  existing configuration.
+  """
+  @spec set_configuration(peer(), Configuration.t) :: :ok | {:error, term()}
+
+  def set_configuration(peer, configuration) do
+    id = UUID.uuid4()
+    Server.set_configuration(peer, {id, configuration})
+  end
 
   @doc """
   Bootstraps a server. You must be careful when using this command.
@@ -14,10 +45,10 @@ defmodule TonicLeader do
   Another option for starting a new cluster would be to bootstrap a single node
   as a leader and then use `add_voter/2` to add servers to the cluster.
   """
-  def bootstrap(config, configuration) do
-    Logger.debug("Bootstrapping #{config.name}")
+  def bootstrap(name, config, configuration) do
+    Logger.debug("Bootstrapping #{name}")
 
-    {:ok, log_store} = LogStore.open(Config.db_path(config))
+    {:ok, log_store} = LogStore.open(Config.db_path(name, config))
 
     # Check to see if this server already has storage; fail if it does
     if LogStore.has_data?(log_store) do
@@ -39,7 +70,7 @@ defmodule TonicLeader do
     Server.Supervisor.start_server(config)
   end
 
-  def test_mode() do
+  def test_cluster() do
     alias TonicLeader.{Configuration, Config}
 
     :tonic_leader
@@ -52,27 +83,27 @@ defmodule TonicLeader do
     end)
 
     configuration = %Configuration{
-      servers: [
+      old_servers: [
         Configuration.voter(:s1, node()),
         Configuration.voter(:s2, node()),
         Configuration.voter(:s3, node()),
       ],
       index: 1,
     }
-    {:ok, s1} = TonicLeader.bootstrap(%Config{name: :s1}, configuration)
-    {:ok, s2} = TonicLeader.bootstrap(%Config{name: :s2}, configuration)
-    {:ok, s3} = TonicLeader.bootstrap(%Config{name: :s3}, configuration)
+    {:ok, s1} = TonicLeader.bootstrap(:s1, %Config{name: :s1}, configuration)
+    {:ok, s2} = TonicLeader.bootstrap(:s2, %Config{name: :s2}, configuration)
+    {:ok, s3} = TonicLeader.bootstrap(:s3, %Config{name: :s3}, configuration)
 
     {s1, s2, s3}
   end
 
   @doc """
   Used to apply a new change to the application fsm. Leader ensures that this
-  is done in consistent manner.
+  is done in consistent manner. This operation blocks until the log has been
+  replicated to a majority of servers.
   """
-  @spec apply(any()) :: :ok | {:error, :timeout} | {:error, :not_leader}
-  def apply(cmd) do
-
+  @spec apply(term(), list()) :: {:ok, term()} | {:error, :timeout} | {:error, :not_leader}
+  def apply(_cmd, _opts) do
   end
 
   @doc """
@@ -82,7 +113,7 @@ defmodule TonicLeader do
   """
   @spec add_voter(atom(), pid()) :: :ok
 
-  def add_voter(name, pid) do
+  def add_voter(_name, _pid) do
     # Send this thing somewhere
     #
   end
