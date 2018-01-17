@@ -1,5 +1,5 @@
 defmodule TonicLeader do
-  alias TonicLeader.{Server, Log, LogStore, Config}
+  alias TonicLeader.{Server, Log, LogStore, Config, Configuration}
   require Logger
 
   @type peer :: atom() | {atom(), atom()}
@@ -19,7 +19,7 @@ defmodule TonicLeader do
   @spec leader(peer()) :: peer() | :none
 
   def leader(name) do
-    Server.leader(name)
+    Server.current_leader(name)
   end
 
   @doc """
@@ -103,19 +103,9 @@ defmodule TonicLeader do
   replicated to a majority of servers.
   """
   @spec apply(term(), list()) :: {:ok, term()} | {:error, :timeout} | {:error, :not_leader}
+
   def apply(_cmd, _opts) do
-  end
-
-  @doc """
-  Adds a server to the cluster. The new server will be added in a staging mode.
-  Once the new server is ready the leader will promote the new server to a
-  follower.
-  """
-  @spec add_voter(atom(), pid()) :: :ok
-
-  def add_voter(_name, _pid) do
-    # Send this thing somewhere
-    #
+    {:ok, :not_implemented}
   end
 end
 

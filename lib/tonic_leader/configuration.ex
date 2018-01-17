@@ -2,6 +2,11 @@ defmodule TonicLeader.Configuration do
   @derive Jason.Encoder
   defstruct [state: :none, old_servers: [], new_servers: [], index: 0, latest: %{}]
 
+  alias __MODULE__
+  alias TonicLeader.Log.Entry
+  alias TonicLeader.{Configuration}
+
+
   @type peer :: atom() | {atom(), atom()}
   @type config_state :: :none
                       | :stable
@@ -33,15 +38,21 @@ defmodule TonicLeader.Configuration do
     def to_server(server), do: server
   end
 
-  alias __MODULE__
-  alias TonicLeader.Log.Entry
-
   @doc """
   Does the server have a vote.
   """
-  @spec has_vote?(Configuration.t) :: boolean()
+  @spec has_vote?(peer(), Configuration.t) :: boolean()
 
-  def has_vote?(%{state: :none}), do: false
+  def has_vote?(_, %{state: :none}), do: false
+
+  # TODO - Bring this in once we have configuration changes working
+  # def has_vote?(me, %{state: :transition, old_servers: old, new_servers: new}) do
+  #   Enum.member?(old, me) || Enum.member?(new, me)
+  # end
+
+  def has_vote?(me, %{state: :stable, old_servers: servers}) do 
+    Enum.member?(servers, me)
+  end
 
   @doc """
   Is the peer a member of the configuration.
@@ -70,7 +81,7 @@ defmodule TonicLeader.Configuration do
   @doc """
   Gets a list of followers
   """
-  @spec followers(Config.t, peer()) :: [Server.t]
+  @spec followers(Configuration.t, peer()) :: [Server.t]
 
   def followers(%{state: :stable, old_servers: servers}, peer) do
     Enum.reject(servers, & &1 == peer)

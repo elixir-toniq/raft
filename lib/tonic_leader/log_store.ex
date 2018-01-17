@@ -1,8 +1,10 @@
 defmodule TonicLeader.LogStore do
+  alias TonicLeader.Log
+
   @typep path  :: String.t
   @typep log   :: Log.t
   @typep db    :: term()
-  @typep index :: String.t
+  @typep index :: non_neg_integer()
   @typep key   :: String.t
   @typep value :: String.t
 
@@ -20,7 +22,7 @@ defmodule TonicLeader.LogStore do
 
   @callback destroy(db()) :: :ok | {:error, any()}
 
-  @callback last_index(db()) :: {:ok, index()} | {:error, any()}
+  @callback last_index(db()) :: index()
 
   @current_term "CurrentTerm"
 
@@ -55,7 +57,7 @@ defmodule TonicLeader.LogStore do
   end
 
   def write_metadata(db, meta) do
-    adapter().put_metadata(db, meta)
+    adapter().write_metadata(db, meta)
   end
 
   @doc """

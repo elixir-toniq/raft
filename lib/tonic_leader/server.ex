@@ -36,13 +36,15 @@ defmodule TonicLeader.Server do
     type: :worker
   }
 
+  @doc """
+  Starts a new server.
+  """
+  @spec start_link(atom(), Config.t) :: {:ok, pid} | {:error, term()}
+
   def start_link(name, config) do
-    GenStateMachine.start_link(__MODULE__, {:follower, name, config}, name: name)
+    GenStateMachine.start_link(__MODULE__, {:follower, name, config}, [name: name])
   end
-  # def start_link(opts) do
-  #   GenStateMachine.start_link(__MODULE__, {:follower, Config.new(opts)})
-  # end
-  #
+
   def set_configuration(peer, configuration) do
     GenStateMachine.call(peer, {:set_configuration, configuration})
   end
@@ -67,28 +69,18 @@ defmodule TonicLeader.Server do
   the server doesn't know who the latest elected leader is. This function should
   be used for testing and debugging purposes only.
   """
-  def leader(server) do
+  @spec current_leader(atom()) :: atom()
+
+  def current_leader(server) do
     status = GenStateMachine.call(server, :status)
     status[:leader]
   end
 
   @doc """
-  Adds a new member to the cluster. The member is added as a follower.
-  If this is a new server then the new member will be passed a snapshot
-  in order to build the log locally. The new member will be unavailable for
-  voting in a term until its persisted all of the log entries.
+  Gets the current status of the server.
   """
-  def add_voter(server, name, address) do
-    change = %{
-      command: :add_voter,
-      name: name,
-      address: address,
-    }
-
-    GenStateMachine.call(server, {:config_change, change})
-  end
-
   @spec status(pid()) :: status()
+
   def status(sm) do
     GenStateMachine.call(sm, :status)
   end
@@ -158,7 +150,7 @@ defmodule TonicLeader.Server do
   # and hopefully catch them up. If they aren't then we try again.
   def leader(:cast, %AppendEntriesResp{success: false, from: from}=resp, state) do
     Logger.debug("#{state.me}: Follower #{from} is out of date. Decrementing index")
-    next_index = Map.update(state.next_index, from, & &1-1)
+    next_index = Map.update!(state.next_index, from, & &1-1)
     {:next_state, :leader, %{state | next_index: next_index}}
   end
 
@@ -212,7 +204,7 @@ defmodule TonicLeader.Server do
   #
 
   def follower(:info, :timeout, %{configuration: config}=state) do
-    case Configuration.has_vote?(config) do
+    case Configuration.has_vote?(state.me, config) do
       true ->
         Logger.debug("#{state.me}: Becoming candidate")
         new_state = become_candidate(state)

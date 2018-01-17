@@ -8,6 +8,14 @@ defmodule TonicLeader.Config do
     data_dir: "",
   ]
 
+  @type t :: %__MODULE__{
+    state_machine: :none,
+    min_election_timeout: non_neg_integer(),
+    max_election_timeout: non_neg_integer(),
+    heartbeat_timeout: non_neg_integer(),
+    data_dir: String.t,
+  }
+
   def new(opts) do
     valid_opts =
       default_opts()
@@ -29,7 +37,7 @@ defmodule TonicLeader.Config do
   Generates a random timeout value between the min_election_timeout and
   max_election_timeout.
   """
-  @spec election_timeout(Config.t) :: pos_integer()
+  @spec election_timeout(t) :: pos_integer()
 
   def election_timeout(%{min_election_timeout: min, max_election_timeout: max}) do
     case min < max do

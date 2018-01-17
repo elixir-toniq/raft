@@ -3,12 +3,6 @@ defmodule TonicLeader.RPC do
 
   require Logger
 
-  @type server :: pid()
-  @type msg :: AppendEntriesReq
-             | AppendEntriesResp
-             | RequestVoteReq
-             | RequestVoteResp
-
   defmodule AppendEntriesReq do
     @enforce_keys [:leader_id, :entries, :prev_log_index, :prev_log_term, :leader_commit]
     defstruct [
@@ -56,6 +50,13 @@ defmodule TonicLeader.RPC do
     ]
   end
 
+  @type server :: pid()
+  @type msg :: %AppendEntriesReq{}
+             | %AppendEntriesResp{}
+             | %RequestVoteReq{}
+             | %RequestVoteResp{}
+
+
   # def replicate(state, log) do
   #   state.configurations.latest.servers
   #   |> Enum.reject(self())
@@ -70,7 +71,7 @@ defmodule TonicLeader.RPC do
   @doc """
   Sends a message to a server
   """
-  @spec send_msg(msg()) :: :ok
+  @spec send_msg(msg()) :: pid()
 
   def send_msg(%{from: from, to: to}=rpc) do
     spawn fn ->

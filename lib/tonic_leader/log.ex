@@ -44,24 +44,4 @@ defmodule TonicLeader.Log do
       data: configuration,
     }
   end
-
-  @doc """
-  Adds an add_member entry to the log.
-  """
-  @spec add_member(t(), Entry.term(), member()) :: Entry.t
-
-  def add_member(%{commit_index: index}, term, member) do
-    Entry.add_member(index+1, term, member)
-  end
-
-  @doc """
-  Appends a new entry to the log.
-  """
-  @spec append(Log.t, Entry.t) :: Log.t
-
-  def append(log, entry) do
-    entries = Map.put(log.entries, entry.index, entry)
-    index   = entry.index
-    %Log{log | commit_index: index, entries: entries}
-  end
 end

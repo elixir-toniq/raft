@@ -62,12 +62,12 @@ defmodule TonicLeader.LogStore.RocksDB do
     end
   end
 
-  def write_metadata(%{conf: db}, meta) do
-    case :rocksdb.put(db, "metadata", encode_entry(meta), []) do
-      :ok -> :ok
-      error -> {:error, error}
-    end
-  end
+  # def write_metadata(%{conf: db}, meta) do
+  #   case :rocksdb.put(db, "metadata", encode_entry(meta), []) do
+  #     :ok -> :ok
+  #     error -> {:error, error}
+  #   end
+  # end
 
   def get_metadata(%{conf: db}) do
     case :rocksdb.get(db, @metadata, []) do
@@ -96,8 +96,10 @@ defmodule TonicLeader.LogStore.RocksDB do
 
   @impl true
   def destroy(%{path: path}) do
-    path |> db_logs |> File.rm_rf
-    path |> db_conf |> File.rm_rf
+    {:ok, _} = path |> db_logs |> File.rm_rf
+    {:ok, _} = path |> db_conf |> File.rm_rf
+
+    :ok
   end
 
   # TODO: decode and encode need to be protocols and removed from this module

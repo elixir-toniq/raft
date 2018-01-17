@@ -11,6 +11,9 @@ defmodule TonicLeader.Mixfile do
       deps: deps(),
       name: "TonicLeader",
       description: description(),
+      dialyzer: [
+        plt_add_deps: :transitive,
+      ],
     ]
   end
 
@@ -33,7 +36,7 @@ defmodule TonicLeader.Mixfile do
     {:jason, "~> 1.0-rc"},
     {:msgpax, "~> 2.0"},
     {:uuid, "~> 1.1"},
-    {:dialyxir, "~> 0.5", only: :dev},
+    {:dialyxir, "~> 0.5", only: :dev, runtime: false},
     {:stream_data, "~> 0.4", only: [:dev, :test]},
   ]
 

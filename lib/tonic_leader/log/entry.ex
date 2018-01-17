@@ -32,11 +32,6 @@ defmodule TonicLeader.Log.Entry do
   ]
 
 
-  @spec add_member(index(), pos_integer(), pid()) :: Entry.t
-  def add_member(index, term, member) do
-    %__MODULE__{index: index, term: term, type: :add_member, data: member}
-  end
-
   def configuration?(entry), do: type(entry) == :config
 
   @doc """
