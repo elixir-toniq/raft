@@ -47,14 +47,6 @@ defmodule TonicLeader.Server do
     GenStateMachine.call(peer, {:set_configuration, configuration})
   end
 
-  def get(sm, key) do
-    GenStateMachine.call(sm, {:get, key})
-  end
-
-  def put(sm, key, value) do
-    GenStateMachine.call(sm, {:put, key, value})
-  end
-
   @doc """
   Applies a new log to the application state machine. This is done in a highly
   consistent manor. This must be called on the leader or it will fail.
@@ -185,7 +177,6 @@ defmodule TonicLeader.Server do
     state = %{state | match_index: match_index, next_index: next_index}
     state = maybe_commit_logs(state)
 
-    IO.inspect(state, label: "New state after replication")
     {:next_state, :leader, state}
   end
 
@@ -197,7 +188,6 @@ defmodule TonicLeader.Server do
   # take actions in the leader callback
   def maybe_commit_logs(state) do
     commit_index = Configuration.quorum_max(state.configuration, state.match_index)
-    IO.inspect(commit_index, label: "commit index")
     cond do
       commit_index > state.commit_index and safe_to_commit?(commit_index, state) ->
         Logger.debug("Committing to index #{commit_index}")
@@ -237,7 +227,8 @@ defmodule TonicLeader.Server do
   # We can set the configuration if we're in follower state and we have no
   # configuration is empty (which means the log is empty). This is so we can
   # bootstrap a new server.
-  def follower({:call, from}, {:set_configuration, {id, peers}}, %{configuration: %{state: :none}}=state) do
+  def follower({:call, from}, {:set_configuration, {id, peers}},
+                              %{configuration: %{state: :none}}=state) do
     Logger.debug("Setting initial configuration on #{state.me}")
     case Enum.member?(peers, state.me) do
       true ->
@@ -265,14 +256,13 @@ defmodule TonicLeader.Server do
   # def follower(:cast, %AppendEntriesReq{term: term},
   def follower({:call, from}, %AppendEntriesReq{term: term},
                %{current_term: current_term}=state) when current_term > term do
-    Logger.debug("Rejected append entries from leader with a lower term")
+    Logger.debug("#{state.me}: Rejected append entries from leader with a lower term")
 
     resp = %AppendEntriesResp{from: state.me, term: current_term, success: false}
     rpy = {:reply, from, resp}
     {:keep_state_and_data, [rpy]}
   end
 
-  # def follower(:cast, %AppendEntriesReq{}=req, state) do
   def follower({:call, from}, %AppendEntriesReq{}=req, state) do
     state = reset_timeout(state)
     state = set_term(req.term, state)
@@ -282,7 +272,6 @@ defmodule TonicLeader.Server do
       Logger.debug(fn -> "#{state.me}: Log is consistent. Appending #{Enum.count(req.entries)} new entries" end)
       {:ok, index} = LogStore.append(state.log_store, req.entries)
       config = LogStore.get_config(state.log_store)
-      IO.inspect(req.leader_commit, label: "Leaders commit index")
       state = commit_entries(req.leader_commit, state)
       state = %{state | leader: req.from, configuration: config}
       resp = %{resp | success: true, index: index}
@@ -306,19 +295,21 @@ defmodule TonicLeader.Server do
     end
   end
 
-  def commit_entries(leader_index, %{commit_index: commit_index}=state) when commit_index >= leader_index, do: state
-  def commit_entries(leader_index, state) do
+  def commit_entries(leader_index, %{commit_index: commit_index}=state)
+                                   when commit_index >= leader_index, do: state
+
+  def commit_entries(leader_index, %{commit_index: commit_index}=state) do
     last_index = min(leader_index, LogStore.last_index(state.log_store))
 
     # Starting at the last known index and working towards the new last index
     # apply each log to the state machine
-    (state.commit_index..last_index)
+    (commit_index+1..last_index)
     |> Enum.reduce(state, &commit_entry/2)
   end
 
   def commit_entry(index, state) do
     case LogStore.get_log(state.log_store, index) do
-      {:ok, %{type: :config_change}=log} ->
+      {:ok, %{type: 3}=log} ->
         rpy = {:ok, state.configuration} # TODO - This is probably wrong
         respond_to_client_requests(state.client_reqs, log, rpy)
     end
@@ -365,6 +356,7 @@ defmodule TonicLeader.Server do
     reset_timeout(state)
   end
 
+  # TODO - Clean all this nonsense up
   defp become_leader(state) do
     case state.init_config do
       {id, from} ->
@@ -373,6 +365,7 @@ defmodule TonicLeader.Server do
         next_index = initial_indexes(state, index+1)
         match_index = initial_indexes(state, 0)
         state = %{state | next_index: next_index, match_index: match_index}
+        state = %{state | leader: state.me}
         entry = Log.configuration(1, state.current_term, state.configuration)
         state = append(state, id, from, entry)
         send_append_entries(state)
@@ -603,7 +596,6 @@ defmodule TonicLeader.Server do
 
   defp previous(_state, 1), do: {0, 0}
   defp previous(state, index) do
-    IO.inspect(index, label: "Index")
     prev_index = index-1
     {:ok, log} = LogStore.get_log(state.log_store, prev_index)
     {prev_index, log.term}

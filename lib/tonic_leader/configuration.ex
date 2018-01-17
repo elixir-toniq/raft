@@ -104,13 +104,17 @@ defmodule TonicLeader.Configuration do
   @spec quorum_max(Configuration.t, map()) :: non_neg_integer()
 
   def quorum_max(configuration, indexes) do
-    {value, _votes} =
+    values =
       indexes
-      |> Enum.group_by(fn {_, vote} -> vote end)
-      |> IO.inspect(label: "grouped")
-      |> Enum.sort_by(fn {_v, votes} -> Enum.count(votes) end, &>=/2)
-      |> IO.inspect(label: "sorted")
-      |> Enum.find(fn {_v, votes} -> majority?(configuration, votes) end)
+      |> Enum.map(fn {_, v} -> v end)
+      |> Enum.sort(&>=/2)
+
+    {value, _votes} =
+      values
+      |> Enum.map(fn v -> {v, Enum.count(values, & &1 >= v)} end)
+      |> Enum.find(fn {_, votes} -> votes >= quorum(configuration) end)
+
+    value
   end
 
   def encode(configuration) do

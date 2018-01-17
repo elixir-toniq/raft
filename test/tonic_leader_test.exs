@@ -51,9 +51,7 @@ defmodule TonicLeaderTest do
 
     # Tell a server about other nodes
     nodes = [:s1, :s2, :s3]
-    {:error, :peers_not_responding} = TonicLeader.set_configuration(:s1, nodes)
-
-    IO.puts "Made it past setting config"
+    {:ok, _configuration} = TonicLeader.set_configuration(:s1, nodes)
 
     # Ensure that s1 has been elected leader which means our configuration has
     # been shared throughout the cluster.
@@ -152,7 +150,6 @@ defmodule TonicLeaderTest do
   def wait_for_election(servers) do
     servers
     |> Enum.map(&Server.status/1)
-    |> IO.inspect(label: "Current states")
     |> Enum.find(& &1.current_state == :leader)
     |> case do
       nil ->
