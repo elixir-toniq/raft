@@ -52,10 +52,6 @@ defmodule TonicLeader.LogStore do
     end
   end
 
-  def get_config(db) do
-    %TonicLeader.Configuration{}
-  end
-
   def write_metadata(db, meta) do
     adapter().write_metadata(db, meta)
   end
@@ -116,6 +112,13 @@ defmodule TonicLeader.LogStore do
       {:error, error} ->
         {:error, error}
     end
+  end
+
+  # TODO - this needs to actually get the most recent config from the logs
+  def get_config(_) do
+    require Logger
+    # Logger.error("Getting config")
+    %TonicLeader.Configuration{}
   end
 
   @doc """

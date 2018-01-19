@@ -5,7 +5,6 @@ defmodule TonicLeader.Application do
 
   def start(_type, _args) do
     children = [
-      TonicLeader.Log.InMemory,
       TonicLeader.Server.Supervisor,
     ]
 

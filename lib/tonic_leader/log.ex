@@ -5,7 +5,6 @@ defmodule TonicLeader.Log do
   alias TonicLeader.Log.Entry
 
   @typep index :: pos_integer()
-  @typep member :: pid()
 
   @type t :: %__MODULE__{
     entries: %{required(index()) => Entry.t},

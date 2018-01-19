@@ -81,11 +81,13 @@ defmodule TonicLeader.RPC do
       |> case do
         %AppendEntriesResp{}=resp ->
           GenStateMachine.cast(from, resp)
+
         %RequestVoteResp{}=resp ->
           GenStateMachine.cast(from, resp)
+
         error ->
           Logger.error fn ->
-            "Error sending #{inspect rpc} to #{to} from #{from}"
+            "Error: #{inspect error} sending #{inspect rpc} to #{to} from #{from}"
           end
       end
     end

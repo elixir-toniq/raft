@@ -1,6 +1,4 @@
 defmodule TonicLeader.Log.Entry do
-  alias __MODULE__
-
   @derive Jason.Encoder
   defstruct [:index, :term, :type, :data]
 

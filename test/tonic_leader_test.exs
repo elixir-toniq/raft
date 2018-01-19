@@ -62,34 +62,6 @@ defmodule TonicLeaderTest do
     assert TonicLeader.leader(:s3) == :s1
   end
 
-  # describe "bootstrap/2" do
-  #   test "starts a new cluster" do
-  #     configuration = %Configuration{
-  #       old_servers: [
-  #         Configuration.voter(:s1, node()),
-  #         Configuration.voter(:s2, node()),
-  #         Configuration.voter(:s3, node()),
-  #       ],
-  #       index: 1,
-  #     }
-  #     {:ok, s1} = TonicLeader.bootstrap(%Config{name: :s1}, configuration)
-  #     {:ok, s2} = TonicLeader.bootstrap(%Config{name: :s2}, configuration)
-  #     {:ok, s3} = TonicLeader.bootstrap(%Config{name: :s3}, configuration)
-
-  #     assert TonicLeader.Server.status(s1)[:configuration] == configuration
-  #     assert TonicLeader.Server.status(s2)[:configuration] == configuration
-  #     assert TonicLeader.Server.status(s3)[:configuration] == configuration
-
-  #     assert TonicLeader.Server.leader(s1) == :none
-
-  #     leader = wait_for_election([s1, s2, s3])
-
-  #     assert TonicLeader.Server.leader(s1) == leader
-  #     assert TonicLeader.Server.leader(s2) == leader
-  #     assert TonicLeader.Server.leader(s3) == leader
-  #   end
-  # end
-
   #test "log replication with 3 servers" do
   #  base_config = %Config{
   #    state_machine: StackTestFSM,
