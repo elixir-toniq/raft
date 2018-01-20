@@ -1,5 +1,5 @@
-defmodule TonicLeader.RPC do
-  alias TonicLeader.Configuration.Server
+defmodule TonicRaft.RPC do
+  alias TonicRaft.Configuration.Server
 
   require Logger
 

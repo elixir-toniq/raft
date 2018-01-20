@@ -1,11 +1,11 @@
-defmodule TonicLeaderTest do
+defmodule TonicRaftTest do
   use ExUnit.Case
-  doctest TonicLeader
+  doctest TonicRaft
 
-  alias TonicLeader.{Config, Server}
+  alias TonicRaft.{Config, Server}
 
   # defmodule StackTestFSM do
-  #   @behaviour TonicLeader.FSM
+  #   @behaviour TonicRaft.FSM
 
   #   def init(_) do
   #     []
@@ -29,7 +29,7 @@ defmodule TonicLeaderTest do
   # end
 
   setup do
-    :tonic_leader
+    :tonic_raft
     |> Application.app_dir
     |> File.cd!(fn ->
       File.ls!()
@@ -45,21 +45,21 @@ defmodule TonicLeaderTest do
     # Start each node individually with no configuration. Each node will
     # come up as a follower and remain there since they have no known
     # configuration yet.
-    {:ok, _s1} = TonicLeader.start_node(:s1, %Config{})
-    {:ok, _s2} = TonicLeader.start_node(:s2, %Config{})
-    {:ok, _s3} = TonicLeader.start_node(:s3, %Config{})
+    {:ok, _s1} = TonicRaft.start_node(:s1, %Config{})
+    {:ok, _s2} = TonicRaft.start_node(:s2, %Config{})
+    {:ok, _s3} = TonicRaft.start_node(:s3, %Config{})
 
     # Tell a server about other nodes
     nodes = [:s1, :s2, :s3]
-    {:ok, _configuration} = TonicLeader.set_configuration(:s1, nodes)
+    {:ok, _configuration} = TonicRaft.set_configuration(:s1, nodes)
 
     # Ensure that s1 has been elected leader which means our configuration has
     # been shared throughout the cluster.
     _ = wait_for_election(nodes)
 
-    assert TonicLeader.leader(:s1) == :s1
-    assert TonicLeader.leader(:s2) == :s1
-    assert TonicLeader.leader(:s3) == :s1
+    assert TonicRaft.leader(:s1) == :s1
+    assert TonicRaft.leader(:s2) == :s1
+    assert TonicRaft.leader(:s3) == :s1
   end
 
   #test "log replication with 3 servers" do
@@ -75,17 +75,17 @@ defmodule TonicLeaderTest do
   #    ],
   #    index: 1,
   #  }
-  #  {:ok, s1} = TonicLeader.bootstrap(%Config{base_config | name: :s1}, configuration)
-  #  {:ok, s2} = TonicLeader.bootstrap(%Config{base_config | name: :s2}, configuration)
-  #  {:ok, s3} = TonicLeader.bootstrap(%Config{base_config | name: :s3}, configuration)
+  #  {:ok, s1} = TonicRaft.bootstrap(%Config{base_config | name: :s1}, configuration)
+  #  {:ok, s2} = TonicRaft.bootstrap(%Config{base_config | name: :s2}, configuration)
+  #  {:ok, s3} = TonicRaft.bootstrap(%Config{base_config | name: :s3}, configuration)
 
   #  leader = wait_for_election([s1, s2, s3])
 
-  #  assert :ok          = TonicLeader.Server.apply(leader, {:enqueue, 1})
-  #  assert :ok          = TonicLeader.Server.apply(leader, {:enqueue, 2})
-  #  assert {:ok, 2}     = TonicLeader.Server.apply(leader, :dequeue)
-  #  assert :ok          = TonicLeader.Server.apply(leader, {:enqueue, 3})
-  #  assert {:ok, [3,1]} = TonicLeader.Server.query(leader)
+  #  assert :ok          = TonicRaft.Server.apply(leader, {:enqueue, 1})
+  #  assert :ok          = TonicRaft.Server.apply(leader, {:enqueue, 2})
+  #  assert {:ok, 2}     = TonicRaft.Server.apply(leader, :dequeue)
+  #  assert :ok          = TonicRaft.Server.apply(leader, {:enqueue, 3})
+  #  assert {:ok, [3,1]} = TonicRaft.Server.query(leader)
 
   #  # Ensure that the messages are replicated to all servers
   #  #
@@ -95,11 +95,11 @@ defmodule TonicLeaderTest do
   # test "leader failure" do
     # cluster = make_cluster(3)
     # leader = leader(cluster)
-    # :ok = TonicLeader.Server.apply(leader, {:enqueue, 1})
+    # :ok = TonicRaft.Server.apply(leader, {:enqueue, 1})
     # wait_for_replication(1)
 
     # Disconnect the leader from the cluster
-    # current_term = TonicLeader.Server.current_term(leader)
+    # current_term = TonicRaft.Server.current_term(leader)
     # disconnect(leader)
 
     # Wait until a new leader is elected

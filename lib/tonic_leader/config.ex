@@ -1,4 +1,4 @@
-defmodule TonicLeader.Config do
+defmodule TonicRaft.Config do
   defstruct [
     state_machine: :none,
     name: :none,
@@ -27,7 +27,7 @@ defmodule TonicLeader.Config do
 
   def db_path(name, config), do: config |> data_dir |> Path.join("#{name}")
 
-  def data_dir(%{data_dir: ""}), do: :tonic_leader
+  def data_dir(%{data_dir: ""}), do: :tonic_raft
                                  |> Application.app_dir()
                                  # |> Path.join("data")
 

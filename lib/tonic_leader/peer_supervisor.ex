@@ -1,4 +1,4 @@
-defmodule TonicLeader.PeerSupervisor do
+defmodule TonicRaft.PeerSupervisor do
   use Supervisor
 
   def start_link(arg) do
@@ -7,8 +7,8 @@ defmodule TonicLeader.PeerSupervisor do
 
   def init(_arg) do
     children = [
-      {TonicLeader.LogServer, []},
-      {TonicLeader.Server, []},
+      {TonicRaft.LogServer, []},
+      {TonicRaft.Server, []},
     ]
 
     Supervisor.init(children, strategy: :one_for_all)

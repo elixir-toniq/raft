@@ -1,10 +1,10 @@
-defmodule TonicLeader.Configuration do
+defmodule TonicRaft.Configuration do
   @derive Jason.Encoder
   defstruct [state: :none, old_servers: [], new_servers: [], index: 0, latest: %{}]
 
   alias __MODULE__
-  alias TonicLeader.Log.Entry
-  alias TonicLeader.{Configuration}
+  alias TonicRaft.Log.Entry
+  alias TonicRaft.{Configuration}
 
 
   @type peer :: atom() | {atom(), atom()}

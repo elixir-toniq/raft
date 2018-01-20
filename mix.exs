@@ -1,15 +1,15 @@
-defmodule TonicLeader.Mixfile do
+defmodule TonicRaft.Mixfile do
   use Mix.Project
 
   def project do
     [
-      app: :tonic_leader,
+      app: :tonic_raft,
       version: "0.1.0",
       elixir: "~> 1.5",
       elixirc_paths: elixirc_paths(Mix.env),
       start_permanent: Mix.env == :prod,
       deps: deps(),
-      name: "TonicLeader",
+      name: "TonicRaft",
       description: description(),
       dialyzer: [
         plt_add_deps: :transitive,
@@ -21,7 +21,7 @@ defmodule TonicLeader.Mixfile do
   def application do
     [
       extra_applications: [:logger],
-      mod: {TonicLeader.Application, []}
+      mod: {TonicRaft.Application, []}
     ]
   end
 

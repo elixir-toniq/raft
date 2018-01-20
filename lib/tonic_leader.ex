@@ -1,5 +1,5 @@
-defmodule TonicLeader do
-  alias TonicLeader.{Server, LogStore, Config, Configuration}
+defmodule TonicRaft do
+  alias TonicRaft.{Server, LogStore, Config, Configuration}
   require Logger
 
   @type peer :: atom() | {atom(), atom()}
@@ -10,7 +10,7 @@ defmodule TonicLeader do
   @spec start_node(peer(), Config.t) :: {:ok, term()} | {:error, term()}
 
   def start_node(name, opts) do
-    TonicLeader.Server.Supervisor.start_peer(name, opts)
+    TonicRaft.Server.Supervisor.start_peer(name, opts)
   end
 
   @doc """
@@ -52,12 +52,12 @@ defmodule TonicLeader do
     File.rm_rf!(path)
     File.mkdir(path)
 
-    {:ok, s1} = TonicLeader.start_node(:s1, %Config{data_dir: path})
-    {:ok, s2} = TonicLeader.start_node(:s2, %Config{data_dir: path})
-    {:ok, s3} = TonicLeader.start_node(:s3, %Config{data_dir: path})
+    {:ok, s1} = TonicRaft.start_node(:s1, %Config{data_dir: path})
+    {:ok, s2} = TonicRaft.start_node(:s2, %Config{data_dir: path})
+    {:ok, s3} = TonicRaft.start_node(:s3, %Config{data_dir: path})
 
     nodes = [:s1, :s2, :s3]
-    {:ok, _configuration} = TonicLeader.set_configuration(:s1, nodes)
+    {:ok, _configuration} = TonicRaft.set_configuration(:s1, nodes)
 
     {s1, s2, s3}
   end

@@ -1,7 +1,7 @@
-defmodule TonicLeader.ConfigurationTest do
+defmodule TonicRaft.ConfigurationTest do
   use ExUnit.Case, async: true
 
-  alias TonicLeader.{Configuration}
+  alias TonicRaft.{Configuration}
 
   describe "quorum_max/2" do
     test "returns the max index for which we have a quorum" do

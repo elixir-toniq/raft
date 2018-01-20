@@ -1,8 +1,8 @@
-defmodule TonicLeader.Generators do
+defmodule TonicRaft.Generators do
   import StreamData
   import ExUnitProperties
 
-  alias TonicLeader.Log.Entry
+  alias TonicRaft.Log.Entry
 
   def entries do
     list_of(entry())

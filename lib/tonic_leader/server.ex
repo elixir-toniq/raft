@@ -1,14 +1,14 @@
-defmodule TonicLeader.Server do
+defmodule TonicRaft.Server do
   use GenStateMachine, callback_mode: :state_functions
 
-  alias TonicLeader.{RPC, Log, LogStore, Config, Configuration}
-  alias TonicLeader.RPC.{
+  alias TonicRaft.{RPC, Log, LogStore, Config, Configuration}
+  alias TonicRaft.RPC.{
     AppendEntriesReq,
     AppendEntriesResp,
     RequestVoteReq,
     RequestVoteResp,
   }
-  alias TonicLeader.Server.State
+  alias TonicRaft.Server.State
 
   require Logger
 

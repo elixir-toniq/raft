@@ -1,4 +1,4 @@
-defmodule TonicLeader.RPC.RequestVote do
+defmodule TonicRaft.RPC.RequestVote do
   defstruct [
     :term,
     :candidate_id,

@@ -1,8 +1,8 @@
-defmodule TonicLeader.ConfigTest do
+defmodule TonicRaft.ConfigTest do
   use ExUnit.Case, async: true
   use ExUnitProperties
 
-  alias TonicLeader.Config
+  alias TonicRaft.Config
 
   property "election_timeout/1 returns values between the min and max" do
     check all min <- StreamData.positive_integer(),

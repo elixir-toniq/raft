@@ -1,8 +1,8 @@
-defmodule TonicLeader.Log do
+defmodule TonicRaft.Log do
   defstruct [entries: %{}, commit_index: 0, last_applied: 0]
 
   alias __MODULE__
-  alias TonicLeader.Log.Entry
+  alias TonicRaft.Log.Entry
 
   @typep index :: pos_integer()
 

@@ -1,5 +1,5 @@
-defmodule TonicLeader.Server.State do
-  alias TonicLeader.{Log, Config, Configuration}
+defmodule TonicRaft.Server.State do
+  alias TonicRaft.{Log, Config, Configuration}
   alias __MODULE__
 
   defstruct [

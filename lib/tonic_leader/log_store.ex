@@ -1,5 +1,5 @@
-defmodule TonicLeader.LogStore do
-  alias TonicLeader.Log
+defmodule TonicRaft.LogStore do
+  alias TonicRaft.Log
 
   @typep path  :: String.t
   @typep log   :: Log.t
@@ -118,7 +118,7 @@ defmodule TonicLeader.LogStore do
   def get_config(_) do
     require Logger
     # Logger.error("Getting config")
-    %TonicLeader.Configuration{}
+    %TonicRaft.Configuration{}
   end
 
   @doc """
@@ -143,5 +143,5 @@ defmodule TonicLeader.LogStore do
     last_index(log_store) > 0
   end
 
-  defp adapter, do: Application.get_env(:tonic_leader, :log_store, TonicLeader.LogStore.RocksDB)
+  defp adapter, do: Application.get_env(:tonic_raft, :log_store, TonicRaft.LogStore.RocksDB)
 end

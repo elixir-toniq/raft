@@ -1,4 +1,4 @@
-defmodule TonicLeader.Log.Entry do
+defmodule TonicRaft.Log.Entry do
   @derive Jason.Encoder
   defstruct [:index, :term, :type, :data]
 

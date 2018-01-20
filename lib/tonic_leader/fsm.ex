@@ -1,4 +1,4 @@
-defmodule TonicLeader.FSM do
+defmodule TonicRaft.FSM do
   @moduledoc """
   This module provides a behaviour that can be implemented by clients to make
   use of the replicated log.

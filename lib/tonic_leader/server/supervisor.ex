@@ -1,10 +1,10 @@
-defmodule TonicLeader.Server.Supervisor do
+defmodule TonicRaft.Server.Supervisor do
   @moduledoc """
   Manages Server processes.
   """
   use Supervisor
 
-  alias TonicLeader.Server
+  alias TonicRaft.Server
 
   def start_link(arg) do
     Supervisor.start_link(__MODULE__, arg, name: __MODULE__)
