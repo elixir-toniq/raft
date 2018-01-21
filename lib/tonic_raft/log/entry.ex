@@ -3,6 +3,8 @@ defmodule TonicRaft.Log.Entry do
   defstruct [:index, :term, :type, :data]
 
   @type index :: pos_integer()
+
+  # TODO - Rethink all of these entry types
   @type type  :: :command
                | :leader_elected
                | :add_follower
@@ -10,6 +12,7 @@ defmodule TonicRaft.Log.Entry do
                # TODO Implement these
                # | :remove_follower
                # | :configuration_change
+
   @type data  :: pid()
 
   @type t :: %__MODULE__{
@@ -41,4 +44,15 @@ defmodule TonicRaft.Log.Entry do
   end
 
   def type(name), do: Keyword.get(@log_types, name)
+
+  @doc """
+  Buids a configuration entry.
+  """
+  def configuration(term, configuration) do
+    %__MODULE__{
+      type: type(:config),
+      term: term,
+      data: configuration,
+    }
+  end
 end

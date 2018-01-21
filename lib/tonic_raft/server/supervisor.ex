@@ -4,7 +4,7 @@ defmodule TonicRaft.Server.Supervisor do
   """
   use Supervisor
 
-  alias TonicRaft.Server
+  alias TonicRaft.PeerSupervisor
 
   def start_link(arg) do
     Supervisor.start_link(__MODULE__, arg, name: __MODULE__)
@@ -18,7 +18,7 @@ defmodule TonicRaft.Server.Supervisor do
     Supervisor.start_child(__MODULE__, [config])
   end
   def init(_arg) do
-    child = Supervisor.child_spec(Server, start: {Server, :start_link, []})
+    child = Supervisor.child_spec(PeerSupervisor, start: {PeerSupervisor, :start_link, []})
 
     Supervisor.init([child], [strategy: :simple_one_for_one])
   end

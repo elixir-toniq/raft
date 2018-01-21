@@ -48,7 +48,7 @@ defmodule TonicRaft.LogStore do
       {:ok, metadata} ->
         metadata
       _ ->
-        %{term: 0, voted_for: nil}
+        %{term: 0, voted_for: :none}
     end
   end
 
