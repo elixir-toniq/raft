@@ -1,34 +1,37 @@
 defmodule TonicRaft.LogStore do
-  alias TonicRaft.Log
+  alias TonicRaft.Log.{
+    Entry,
+    Metadata,
+  }
 
   @typep path  :: String.t
-  @typep log   :: Log.t
   @typep db    :: term()
   @typep index :: non_neg_integer()
-  @typep key   :: String.t
-  @typep value :: String.t
+  @typep key :: String.t
+  @typep encoded :: String.t
+  @type metadata :: Metadata.t
 
   @callback open(path()) :: {:ok, db()} | {:error, any()}
 
-  @callback store_logs(db(), log()) :: :ok | {:error, any()}
+  @callback store_entry(db(), key(), encoded()) :: :ok | {:error, any()}
+
+  @callback get_entry(db(), key()) :: {:ok, encoded()} | {:error, :not_found}
+
+  @callback store_metadata(db(), encoded()) :: :ok | {:error, any()}
+
+  @callback get_metadata(db()) :: {:ok, encoded()} | {:error, :not_found}
 
   @callback close(db()) :: :ok | {:error, any()}
 
-  @callback get_log(db(), index()) :: {:ok, log()} | {:error, any()}
-
-  @callback get(db(), key()) :: {:ok, value()} | {:error, any()}
-
-  @callback set(db(), key(), value()) :: :ok | {:error, any()}
-
   @callback destroy(db()) :: :ok | {:error, any()}
 
-  @callback last_index(db()) :: index()
-
-  @current_term "CurrentTerm"
+  @callback last_index(db()) :: key()
 
   @doc """
   Opens a new or existing database at the given path.
   """
+  @spec open(path()) :: db()
+
   def open(path) do
     adapter().open(path)
   end
@@ -36,39 +39,75 @@ defmodule TonicRaft.LogStore do
   @doc """
   Closes the connection to the database
   """
+  @spec close(db()) :: :ok
+
   def close(db) do
     adapter().close(db)
   end
 
   @doc """
+  Store logs in the log store and returns the last index.
+  """
+  @spec store_entries(db(), [Entry.t]) :: {:ok, index()}
+
+  def store_entries(db, entries) do
+    last_index = Enum.reduce entries, nil, fn entry, _ ->
+      index = encode_index(entry.index)
+      encoded = encode(entry)
+      :ok = adapter().store_entry(db, index, encoded)
+      index
+    end
+
+    {:ok, decode_index(last_index)}
+  end
+
+
+  @doc """
   Gets all metadata from the store.
   """
+  @spec get_metadata(db()) :: metadata()
+
   def get_metadata(db) do
     case adapter().get_metadata(db) do
       {:ok, metadata} ->
-        metadata
-      _ ->
-        %{term: 0, voted_for: :none}
+        decode(metadata)
+      {:error, :not_found} ->
+        %Metadata{term: 0, voted_for: :none}
     end
   end
 
-  def write_metadata(db, meta) do
-    adapter().write_metadata(db, meta)
+  @doc """
+  Stores the metadata.
+  """
+  @spec store_metadata(db(), metadata()) :: :ok
+
+  def store_metadata(db, meta) do
+    adapter().store_metadata(db, encode(meta))
   end
 
   @doc """
-  Gets the current term
+  Gets a log at a specific index.
   """
-  def get_current_term(db) do
-    adapter().get(db, @current_term)
+  @spec get_entry(db(), index()) :: {:ok, Entry.t} | {:error, :not_found}
+
+  def get_entry(db, index) do
+    case adapter().get_entry(db, encode_index(index)) do
+      {:ok, value} ->
+        {:ok, decode(value)}
+      {:error, :not_found} ->
+        {:error, :not_found}
+    end
   end
 
   @doc """
   Retrieves the last index thats been saved to stable storage.
   If the database is empty then 0 is returned.
   """
+  @spec last_index(db()) :: index()
+
   def last_index(db) do
-    adapter().last_index(db)
+    index = adapter().last_index(db)
+    decode_index(index)
   end
 
   @doc """
@@ -78,54 +117,6 @@ defmodule TonicRaft.LogStore do
     range
     |> Enum.map(& adapter().get_log(db, &1))
     |> Enum.map(fn {:ok, value} -> value end)
-  end
-
-  @doc """
-  Gets a log at a specific index.
-  """
-  def get_log(db, index) do
-    adapter().get_log(db, index)
-  end
-
-  @doc """
-  Store logs in the log store.
-  """
-  def store_logs(db, entries) do
-    adapter().store_logs(db, entries)
-  end
-
-  def append(db, entries) do
-    :ok = adapter().store_logs(db, entries)
-    last_index = adapter().last_index(db)
-    {:ok, last_index}
-  end
-
-  @doc """
-  Gets a value from the k/v store.
-  """
-  def get(db, key) do
-    case adapter().get(db, key) do
-      {:ok, value} ->
-        {:ok, value}
-      {:error, :not_found} ->
-        {:ok, nil}
-      {:error, error} ->
-        {:error, error}
-    end
-  end
-
-  # TODO - this needs to actually get the most recent config from the logs
-  def get_config(_) do
-    require Logger
-    # Logger.error("Getting config")
-    %TonicRaft.Configuration{}
-  end
-
-  @doc """
-  Sets a value in the key value store.
-  """
-  def set(db, key, value) do
-    adapter().set(db, key, value)
   end
 
   @doc """
@@ -139,8 +130,26 @@ defmodule TonicRaft.LogStore do
   @doc """
   Determines if anything has been written to the log yet.
   """
-  def has_data?(log_store) do
-    last_index(log_store) > 0
+  @spec has_data?(db()) :: boolean()
+
+  def has_data?(db) do
+    last_index(db) > 0
+  end
+
+  defp decode(value) do
+    :erlang.binary_to_term(value)
+  end
+
+  defp encode(value) do
+    :erlang.term_to_binary(value)
+  end
+
+  defp encode_index(index) when is_integer(index) do
+    Integer.to_string(index)
+  end
+
+  defp decode_index(index) when is_binary(index) do
+    String.to_integer(index)
   end
 
   defp adapter, do: Application.get_env(:tonic_raft, :log_store, TonicRaft.LogStore.RocksDB)

@@ -4,7 +4,6 @@ defmodule TonicRaft.Server do
   alias TonicRaft.{
     Log,
     Log.Entry,
-    LogStore,
     Config,
     Configuration,
     RPC,
@@ -563,7 +562,7 @@ defmodule TonicRaft.Server do
 
   defp commit_entry(index, state) do
     case Log.get_entry(state.me, index) do
-      {:ok, %{type: 3}=log} ->
+      {:ok, %{type: :config}=log} ->
         # TODO - This is probably wrong. We actually need to update the
         # configuration with whats in the log.
         rpy = {:ok, state.configuration}

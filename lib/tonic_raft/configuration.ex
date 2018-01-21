@@ -3,8 +3,6 @@ defmodule TonicRaft.Configuration do
   defstruct [state: :none, old_servers: [], new_servers: [], index: 0, latest: %{}]
 
   alias __MODULE__
-  alias TonicRaft.Log.Entry
-  alias TonicRaft.{Configuration}
 
 
   @type peer :: atom() | {atom(), atom()}
@@ -147,7 +145,7 @@ defmodule TonicRaft.Configuration do
 
   def restore(logs) do
     logs
-    |> Enum.filter(& Entry.type(&1) == :config_change)
+    |> Enum.filter(& &1.type == :config)
     |> Enum.reduce(%Configuration{}, &rebuild_configuration/2)
     |> to_struct
   end

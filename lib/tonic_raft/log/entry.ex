@@ -2,55 +2,52 @@ defmodule TonicRaft.Log.Entry do
   @derive Jason.Encoder
   defstruct [:index, :term, :type, :data]
 
-  @type index :: pos_integer()
+  @typedoc """
+  The index the entry is stored at.
+  """
+  @type index :: non_neg_integer()
 
-  # TODO - Rethink all of these entry types
-  @type type  :: :command
-               | :leader_elected
-               | :add_follower
-               | :config
-               # TODO Implement these
-               # | :remove_follower
-               # | :configuration_change
+  @typedoc """
+  The term the entry was stored in.
+  """
+  @type current_term :: non_neg_integer()
 
-  @type data  :: pid()
+  @typedoc """
+  Types of entries.
 
+  `:command` - A command sent from the client.
+  `:config` - Configuration changes.
+  `:noop` - Written when a leader first comes to power so that we can move the
+  commit index forward. Since we can only commit entries from our current term
+  based on Raft's safety description in 5.4.2 we do this immediately in order to
+  force a commitment based on replication. The noop isn't discussed in the paper
+  but is an optimization for the real world.
+  """
+  @type type :: :command
+              | :config
+              | :noop
+
+  @typedoc """
+  The command or configuration data sent by the client.
+  """
+  @type data :: term()
+
+  @typedoc """
+  The Entry struct.
+  """
   @type t :: %__MODULE__{
     index: index(),
-    term: pos_integer(),
+    term: current_term(),
     type: type(),
     data: data(),
   }
-
-  @log_types [
-    command: 0,
-    leader_elected: 1,
-    add_follower: 2,
-    config: 3,
-    # TODO Implement these
-    # | :remove_follower
-    # | :configuration_change
-  ]
-
-
-  def configuration?(entry), do: type(entry) == :config
-
-  @doc """
-  The type of log.
-  """
-  def type(%{type: type}) do
-    {name, _} = Enum.find(@log_types, fn {_, i} -> type == i end)
-    name
-  end
-
-  def type(name), do: Keyword.get(@log_types, name)
 
   @doc """
   Buids a configuration entry.
   """
   def configuration(term, configuration) do
     %__MODULE__{
-      type: type(:config),
+      type: :config,
       term: term,
       data: configuration,
     }

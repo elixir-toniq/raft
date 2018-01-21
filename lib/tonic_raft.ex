@@ -1,5 +1,5 @@
 defmodule TonicRaft do
-  alias TonicRaft.{Server, LogStore, Config, Configuration}
+  alias TonicRaft.{Server, Config, Configuration}
   require Logger
 
   @type peer :: atom() | {atom(), atom()}
