@@ -5,6 +5,7 @@ defmodule TonicRaft.Log do
   alias TonicRaft.{
     Config,
     Log.Entry,
+    Log.Metadata,
     LogStore,
   }
 
@@ -50,7 +51,7 @@ defmodule TonicRaft.Log do
   @doc """
   Sets metadata.
   """
-  @spec set_metadata(atom(), candidate(), log_term()) :: {:ok, metadata()}
+  @spec set_metadata(atom(), candidate(), log_term()) :: :ok
 
   def set_metadata(name, candidate, term) do
     call(name, {:set_metadata, candidate, term})
@@ -104,7 +105,7 @@ defmodule TonicRaft.Log do
   end
 
   def handle_call({:set_metadata, cand, term}, _from, state) do
-    metadata = %{voted_for: cand, term: term}
+    metadata = %Metadata{voted_for: cand, term: term}
     :ok = LogStore.store_metadata(state.log_store, metadata)
     {:reply, :ok, %{state | metadata: metadata}}
   end

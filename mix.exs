@@ -31,7 +31,7 @@ defmodule TonicRaft.Mixfile do
 
   # Run "mix help deps" to learn about dependencies.
   defp deps, do: [
-    {:gen_state_machine, "~> 2.0"},
+    {:gen_state_machine, git: "https://github.com/keathley/gen_state_machine"},
     {:rocksdb, "~> 0.13.1"},
     {:jason, "~> 1.0-rc"},
     {:msgpax, "~> 2.0"},

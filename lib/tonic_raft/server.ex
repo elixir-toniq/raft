@@ -42,7 +42,7 @@ defmodule TonicRaft.Server do
   """
   @spec start_link({atom(), Config.t}) :: {:ok, pid} | {:error, term()}
 
-  def start_link([name, config]) do
+  def start_link({name, config}) do
     GenStateMachine.start_link(__MODULE__, {:follower, name, config}, [name: name])
   end
 
@@ -402,9 +402,7 @@ defmodule TonicRaft.Server do
   end
 
   defp persist_vote(name, term, candidate) do
-    with :ok <- Log.set_metadata(name, candidate, term) do
-      :ok
-    end
+    :ok = Log.set_metadata(name, candidate, term)
   end
 
   defp request_vote(state) do

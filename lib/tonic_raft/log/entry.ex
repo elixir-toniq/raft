@@ -3,9 +3,11 @@ defmodule TonicRaft.Log.Entry do
   defstruct [:index, :term, :type, :data]
 
   @typedoc """
-  The index the entry is stored at.
+  The index the entry is stored at. Defaults to `:none`. Entries are created
+  with a `:none` index and the index is populated when it is appened to the log.
   """
-  @type index :: non_neg_integer()
+  @type index :: :none
+               | non_neg_integer()
 
   @typedoc """
   The term the entry was stored in.
@@ -47,6 +49,7 @@ defmodule TonicRaft.Log.Entry do
   """
   def configuration(term, configuration) do
     %__MODULE__{
+      index: :none,
       type: :config,
       term: term,
       data: configuration,

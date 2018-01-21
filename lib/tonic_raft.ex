@@ -37,13 +37,19 @@ defmodule TonicRaft do
   Sets peers configuration. The new configuration will be merged with any
   existing configuration.
   """
-  @spec set_configuration(peer(), Configuration.t) :: :ok | {:error, term()}
+  @spec set_configuration(peer(), [peer()]) :: {:ok, Configuration.t}
+                                                    | {:error, term()}
 
   def set_configuration(peer, configuration) do
     id = UUID.uuid4()
     Server.set_configuration(peer, {id, configuration})
   end
 
+  @doc """
+  Creates a test cluster for running on a single. Should only be used for
+  development and testing.
+  """
+  @spec test_cluster() :: {peer(), peer(), peer()}
   def test_cluster() do
     path =
       File.cwd!
