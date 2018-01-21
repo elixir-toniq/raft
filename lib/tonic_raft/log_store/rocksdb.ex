@@ -62,16 +62,16 @@ defmodule TonicRaft.LogStore.RocksDB do
     end
   end
 
-  # def write_metadata(%{conf: db}, meta) do
-  #   case :rocksdb.put(db, "metadata", encode_entry(meta), []) do
-  #     :ok -> :ok
-  #     error -> {:error, error}
-  #   end
-  # end
+  def write_metadata(%{conf: db}, meta) do
+    case :rocksdb.put(db, @metadata, :erlang.term_to_binary(meta), []) do
+      :ok -> :ok
+      error -> {:error, error}
+    end
+  end
 
   def get_metadata(%{conf: db}) do
     case :rocksdb.get(db, @metadata, []) do
-      {:ok, value} -> {:ok, decode_entry(value)}
+      {:ok, value} -> {:ok, :erlang.binary_to_term(value)}
       :not_found   -> {:error, :not_found}
       error        -> {:error, error}
     end

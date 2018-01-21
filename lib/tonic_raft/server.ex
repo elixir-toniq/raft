@@ -1,14 +1,19 @@
 defmodule TonicRaft.Server do
   use GenStateMachine, callback_mode: :state_functions
 
-  alias TonicRaft.{RPC, Log, LogStore, Config, Configuration}
-  alias TonicRaft.RPC.{
-    AppendEntriesReq,
-    AppendEntriesResp,
-    RequestVoteReq,
-    RequestVoteResp,
+  alias TonicRaft.{
+    Log,
+    Log.Entry,
+    LogStore,
+    Config,
+    Configuration,
+    RPC,
+    RPC.AppendEntriesReq,
+    RPC.AppendEntriesResp,
+    RPC.RequestVoteReq,
+    RPC.RequestVoteResp,
+    Server.State,
   }
-  alias TonicRaft.Server.State
 
   require Logger
 
@@ -23,8 +28,7 @@ defmodule TonicRaft.Server do
     current_state: state()
   }
 
-  @last_vote_term "LastVoteTerm"
-  @last_vote_cand "LastVoteCand"
+  @initial_state %State{}
 
   def child_spec(opts), do: %{
     id: __MODULE__,
@@ -37,9 +41,9 @@ defmodule TonicRaft.Server do
   @doc """
   Starts a new server.
   """
-  @spec start_link(atom(), Config.t) :: {:ok, pid} | {:error, term()}
+  @spec start_link({atom(), Config.t}) :: {:ok, pid} | {:error, term()}
 
-  def start_link(name, config) do
+  def start_link([name, config]) do
     GenStateMachine.start_link(__MODULE__, {:follower, name, config}, [name: name])
   end
 
@@ -96,24 +100,19 @@ defmodule TonicRaft.Server do
   * - set the configuration
   """
   def init({:follower, name, config}) do
-    Logger.info("#{name}: Starting")
-    {:ok, log_store} = LogStore.open(Config.db_path(name, config))
+    Logger.info("#{name}: Starting FSM")
 
-    Logger.info("#{name}: Restoring old state", metadata: name)
-
-    metadata            = LogStore.get_metadata(log_store)
-    current_term        = metadata.term
-    # last_index          = LogStore.last_index(log_store)
-    # start_index         = 0 # TODO: This should be the index of the last snapshot if there is one
-    # logs                = LogStore.slice(log_store, start_index..last_index)
-    # configuration       = Configuration.restore(logs)
-    configuration       = LogStore.get_config(log_store)
-    state               = State.new(config, log_store, 0, current_term, configuration)
-    state               = reset_timeout(state)
-    state = %{state | me: name}
+    %{term: current_term} = Log.get_metadata(name)
+    configuration = Log.get_configuration(name)
+    state = %{ @initial_state |
+      me: name,
+      config: config,
+      current_term: current_term,
+      configuration: configuration,
+    }
 
     Logger.info("#{state.me}: State has been restored", [server: config.name])
-    {:ok, :follower, state}
+    {:ok, :follower, reset_timeout(state)}
   end
 
   #
@@ -171,6 +170,8 @@ defmodule TonicRaft.Server do
   # Follower callbacks
   #
 
+  # Timeout has happened so if we have a vote we should become a candidate
+  # and start a new election. Otherwise we just wait for a new leader
   def follower(:info, :timeout, %{configuration: config}=state) do
     case Configuration.has_vote?(state.me, config) do
       true ->
@@ -223,17 +224,24 @@ defmodule TonicRaft.Server do
     {:keep_state_and_data, [rpy]}
   end
 
+  # Append entries looks good so lets try to save them.
   def follower({:call, from}, %AppendEntriesReq{}=req, state) do
     state = reset_timeout(state)
-    state = set_term(req.term, state)
     # TODO - When bumping the term we also need to undefine who we voted for this term
-    resp = %AppendEntriesResp{success: false, term: state.current_term, from: state.me}
+    state = set_term(req.term, state)
+
+    resp = %AppendEntriesResp{
+      success: false,
+      term: state.current_term,
+      from: state.me
+    }
+
     if consistent?(req, state) do
       Logger.debug(fn -> "#{state.me}: Log is consistent. Appending #{Enum.count(req.entries)} new entries" end)
-      {:ok, index} = LogStore.append(state.log_store, req.entries)
-      config = LogStore.get_config(state.log_store)
+      {:ok, index} = Log.append(state.me, req.entries)
+      configuration = Log.get_configuration(state.me)
       state = commit_entries(req.leader_commit, state)
-      state = %{state | leader: req.from, configuration: config}
+      state = %{state | leader: req.from, configuration: configuration}
       resp = %{resp | success: true, index: index}
       {:next_state, :follower, state, [{:reply, from, resp}]}
     else
@@ -242,8 +250,12 @@ defmodule TonicRaft.Server do
     end
   end
 
-  def follower(msg, event, data) do
-    handle_event(msg, event, :follower, data)
+  def follower({:call, from}, %RequestVoteReq{}=req, state) do
+    handle_vote(from, req, state)
+  end
+
+  def follower(event, msg, state) do
+    handle_event(event, msg, :follower, state)
   end
 
   #
@@ -255,7 +267,6 @@ defmodule TonicRaft.Server do
   def candidate(:info, :timeout, %{term: 1, init_config: {_id, from}}=state) do
     Logger.warn("#{state.me}: Cluster is unreachable for initial configuration")
     state = reset_timeout(state)
-    # Send message back to client
     GenStateMachine.reply(from, {:error, :peers_not_responding})
     {:next_state, :candidate, state}
   end
@@ -270,9 +281,16 @@ defmodule TonicRaft.Server do
     {:keep_state_and_data, [{:reply, from, {:error, :not_leader}}]}
   end
 
+  # A peer is trying to become leader. If it has a higher term then we
+  # need to step down and become a follower
+  def candidate({:call, from}, %RequestVoteReq{}=req, state) do
+    handle_vote(from, req, state)
+  end
+
   def candidate(:cast, %RequestVoteResp{}=resp, state) do
     Logger.debug("#{state.me}: Received vote")
 
+    # TODO - Make sure that this can handle duplicate deliveries
     state = State.add_vote(state, resp)
 
     cond do
@@ -309,56 +327,8 @@ defmodule TonicRaft.Server do
       leader: state.leader,
       configuration: state.configuration,
     }
+
     {:keep_state_and_data, [{:reply, from, status}]}
-  end
-
-  # TODO - Move this to individual state callbacks
-  def handle_event({:call, from}, %RequestVoteReq{}=req, _current_state, state) do
-    Logger.debug("Getting a request vote req")
-    with {:ok, last_vote_term} <- LogStore.get(state.log_store, @last_vote_term),
-         {:ok, last_vote_cand} <- LogStore.get(state.log_store, @last_vote_cand) do
-
-      vote_granted =
-        cond do
-          req.term < state.current_term -> # Their term is behind ours
-            false
-          last_vote_term == req.term && # We've alredy voted in this term
-          not is_nil(last_vote_cand) &&
-          last_vote_cand != req.candidate_id ->
-            false
-          # up_to_date TODO: Check to ensure the logs are up to date
-          true -> # Otherwise grant our vote
-            true
-        end
-
-      to = req.candidate_id
-        # state.configuration.servers
-        # |> Enum.find(& &1.name == req.candidate_id)
-
-      Logger.debug("Vote granted for #{to}? #{vote_granted}")
-
-
-      case persist_vote(state.log_store, req.term, req.candidate_id) do
-        :ok ->
-          # TODO: Make all of these defaults or something so its cleaner
-          resp = %RequestVoteResp{
-            to: to,
-            from: state.me,
-            term: state.current_term,
-            vote_granted: vote_granted,
-          }
-          {:keep_state_and_data, [{:reply, from, resp}]}
-
-        {:error, error} ->
-          Logger.error("Failed to persist vote: #{error}")
-          {:keep_state_and_data, [{:reply, from, error}]}
-      end
-    else
-      {:error, error} ->
-        Logger.error("Error while casting vote: #{error}")
-
-      {:keep_state_and_data, [{:reply, from, error}]}
-    end
   end
 
   def handle_event(event_type, event, state, _data) do
@@ -368,6 +338,46 @@ defmodule TonicRaft.Server do
 
     {:keep_state_and_data, []}
   end
+
+  defp handle_vote(from, req, state) do
+    Logger.debug("Getting a vote request")
+    state        = set_term(req.term, state)
+    metadata     = Log.get_metadata(state.me)
+    vote_granted = vote_granted?(req, metadata, state)
+    resp         = vote_resp(req.from, state, vote_granted)
+
+    Logger.debug("Vote granted for #{req.from}? #{vote_granted}")
+
+    if vote_granted do
+      :ok = persist_vote(state.me, req.term, req.from)
+    end
+
+    {:next_state, :follower, state, [{:reply, from, resp}]}
+  end
+
+  defp vote_granted?(req, meta, state) do
+    cond do
+      req_is_behind?(req, state) ->
+        false
+
+      voted_for_someone_else?(req, meta) ->
+        false
+
+      !candidate_up_to_date?(req, state) ->
+        false
+
+      true ->
+        true
+    end
+  end
+
+  defp req_is_behind?(%{term: rt}, %{current_term: ct}), do: rt < ct
+
+  defp voted_for_someone_else?(%{term: term, from: candidate},
+                               %{term: vote_term, voted_for: voted_for}),
+    do: vote_term == term && voted_for != :none && candidate != voted_for
+
+  defp candidate_up_to_date?(_, _), do: true
 
   defp election_timeout(%{config: config}) do
     Config.election_timeout(config)
@@ -389,12 +399,11 @@ defmodule TonicRaft.Server do
   end
 
   defp vote_for_myself(state) do
-    persist_vote(state.log_store, state.current_term, state.config.name)
+    persist_vote(state.me, state.current_term, state.config.name)
   end
 
-  defp persist_vote(log_store, term, candidate) do
-    with :ok <- LogStore.set(log_store, @last_vote_term, term),
-         :ok <- LogStore.set(log_store, @last_vote_cand, candidate) do
+  defp persist_vote(name, term, candidate) do
+    with :ok <- Log.set_metadata(name, candidate, term) do
       :ok
     end
   end
@@ -412,16 +421,25 @@ defmodule TonicRaft.Server do
     end
   end
 
+  defp vote_resp(server, state, vote_granted) do
+    %RequestVoteResp{
+      to: server,
+      from: state.me,
+      term: state.current_term,
+      vote_granted: vote_granted,
+    }
+  end
+
   defp previous(_state, 1), do: {0, 0}
   defp previous(state, index) do
     prev_index = index-1
-    {:ok, log} = LogStore.get_log(state.log_store, prev_index)
+    {:ok, log} = Log.get_entry(state.me, prev_index)
     {prev_index, log.term}
   end
 
-  defp get_entries(%{log_store: db}, index) do
+  defp get_entries(%{me: me}, index) do
     # TODO - Get a slice of logs here.
-    case LogStore.get_log(db, index) do
+    case Log.get_entry(me, index) do
       {:ok, entry} ->
         [entry]
 
@@ -450,7 +468,7 @@ defmodule TonicRaft.Server do
   end
 
   defp append(state, id, from, entry) do
-    {:ok, index} = LogStore.append(state.log_store, [entry])
+    {:ok, index} = Log.append(state.me, [entry])
     req = %{id: id, from: from, index: index, term: state.current_term}
     %{state | client_reqs: [req | state.client_reqs]}
   end
@@ -469,8 +487,8 @@ defmodule TonicRaft.Server do
     end
   end
 
-  defp safe_to_commit?(index, %{current_term: term, log_store: log_store}) do
-    with {:ok, log} <- LogStore.get_log(log_store, index) do
+  defp safe_to_commit?(index, %{current_term: term, me: me}) do
+    with {:ok, log} <- Log.get_entry(me, index) do
       log.term == term
     else
       _ ->
@@ -495,12 +513,12 @@ defmodule TonicRaft.Server do
     case state.init_config do
       {id, from} ->
         Logger.debug("#{state.me}: Becoming leader with initial config")
-        index = LogStore.last_index(state.log_store)
+        index = Log.last_index(state.me)
         next_index = initial_indexes(state, index+1)
         match_index = initial_indexes(state, 0)
         state = %{state | next_index: next_index, match_index: match_index}
         state = %{state | leader: state.me}
-        entry = Log.configuration(1, state.current_term, state.configuration)
+        entry = Entry.configuration(state.current_term, state.configuration)
         state = append(state, id, from, entry)
         send_append_entries(state)
         state = reset_timeout(heartbeat_timeout(), state)
@@ -517,11 +535,17 @@ defmodule TonicRaft.Server do
     |> Enum.into(%{})
   end
 
-  defp set_term(term, %{current_term: current_term}=state) do
+  defp set_term(term, %{current_term: current_term, me: me}=state) do
     cond do
-      term > current_term -> %{state | current_term: term}
-      term < current_term -> state
-      true                -> state
+      term > current_term ->
+        Log.set_metadata(me, :none, term)
+        %{state | current_term: term}
+
+      term < current_term ->
+        state
+
+      true                -> 
+        state
     end
   end
 
@@ -529,7 +553,7 @@ defmodule TonicRaft.Server do
                                    when commit_index >= leader_index, do: state
 
   defp commit_entries(leader_index, %{commit_index: commit_index}=state) do
-    last_index = min(leader_index, LogStore.last_index(state.log_store))
+    last_index = min(leader_index, Log.last_index(state.me))
 
     # Starting at the last known index and working towards the new last index
     # apply each log to the state machine
@@ -538,13 +562,15 @@ defmodule TonicRaft.Server do
   end
 
   defp commit_entry(index, state) do
-    case LogStore.get_log(state.log_store, index) do
+    case Log.get_entry(state.me, index) do
       {:ok, %{type: 3}=log} ->
-        rpy = {:ok, state.configuration} # TODO - This is probably wrong
+        # TODO - This is probably wrong. We actually need to update the
+        # configuration with whats in the log.
+        rpy = {:ok, state.configuration}
         respond_to_client_requests(state.client_reqs, log, rpy)
     end
 
-    # TODO - actually apply things to the state machine
+    # TODO - actually apply things to the backend state machine
     %{state | commit_index: index}
   end
 
@@ -560,11 +586,13 @@ defmodule TonicRaft.Server do
 
   defp consistent?(%{prev_log_index: 0, prev_log_term: 0}, _), do: true
   defp consistent?(%{prev_log_index: index, prev_log_term: term}, state) do
-    case LogStore.get_log(state.log_store, index) do
+    case Log.get_entry(state.me, index) do
       {:ok, %{term: ^term}} ->
         true
+
       {:ok, %{term: _term}} ->
         false
+
       {:error, :not_found} ->
         false
     end

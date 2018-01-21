@@ -1,5 +1,5 @@
 defmodule TonicRaft.Server.State do
-  alias TonicRaft.{Log, Config, Configuration}
+  alias TonicRaft.{Config, Configuration}
   alias __MODULE__
 
   defstruct [
@@ -22,7 +22,6 @@ defmodule TonicRaft.Server.State do
     timer: nil,
     last_index: 0,
     commit_index: 0,
-    log: %Log{},
     log_store: nil,
     next_index: nil, #only used for the leader, index of the next log entry to send to a server
     match_index: nil, # for each server, index of highest log entry known to be replicated on server
