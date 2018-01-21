@@ -4,7 +4,6 @@ defmodule TonicRaft.Server do
   alias TonicRaft.{
     Log,
     Log.Entry,
-    LogStore,
     Config,
     Configuration,
     RPC,
@@ -43,7 +42,7 @@ defmodule TonicRaft.Server do
   """
   @spec start_link({atom(), Config.t}) :: {:ok, pid} | {:error, term()}
 
-  def start_link([name, config]) do
+  def start_link({name, config}) do
     GenStateMachine.start_link(__MODULE__, {:follower, name, config}, [name: name])
   end
 
@@ -403,9 +402,7 @@ defmodule TonicRaft.Server do
   end
 
   defp persist_vote(name, term, candidate) do
-    with :ok <- Log.set_metadata(name, candidate, term) do
-      :ok
-    end
+    :ok = Log.set_metadata(name, candidate, term)
   end
 
   defp request_vote(state) do
@@ -563,7 +560,7 @@ defmodule TonicRaft.Server do
 
   defp commit_entry(index, state) do
     case Log.get_entry(state.me, index) do
-      {:ok, %{type: 3}=log} ->
+      {:ok, %{type: :config}=log} ->
         # TODO - This is probably wrong. We actually need to update the
         # configuration with whats in the log.
         rpy = {:ok, state.configuration}

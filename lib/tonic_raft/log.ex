@@ -5,6 +5,7 @@ defmodule TonicRaft.Log do
   alias TonicRaft.{
     Config,
     Log.Entry,
+    Log.Metadata,
     LogStore,
   }
 
@@ -50,7 +51,7 @@ defmodule TonicRaft.Log do
   @doc """
   Sets metadata.
   """
-  @spec set_metadata(atom(), candidate(), log_term()) :: {:ok, metadata()}
+  @spec set_metadata(atom(), candidate(), log_term()) :: :ok
 
   def set_metadata(name, candidate, term) do
     call(name, {:set_metadata, candidate, term})
@@ -64,9 +65,12 @@ defmodule TonicRaft.Log do
     Logger.info("#{log_name(name)}: Restoring old state", metadata: name)
     {:ok, log_store} = LogStore.open(Config.db_path(name, opts))
 
-    configuration       = LogStore.get_config(log_store)
     metadata            = LogStore.get_metadata(log_store)
     last_index          = LogStore.last_index(log_store)
+
+    # TODO - This is broken. It needs to rebuild this from logs.
+    configuration       = %TonicRaft.Configuration{}
+
     # start_index         = 0 # TODO: This should be the index of the last snapshot if there is one
     # logs                = LogStore.slice(log_store, start_index..last_index)
     # configuration       = Configuration.restore(logs)
@@ -83,16 +87,16 @@ defmodule TonicRaft.Log do
   def handle_call({:append, entries}, _from, state) do
     state = Enum.reduce(entries, state, fn entry, state ->
       entry = %{entry | index: state.last_index+1}
-      :ok = LogStore.store_logs(state.log_store, [entry])
+      {:ok, last_index} = LogStore.store_entries(state.log_store, [entry])
       state = apply_entry(state, entry)
-      %{state | last_index: entry.index}
+      %{state | last_index: last_index}
     end)
 
     {:reply, {:ok, state.last_index}, state}
   end
 
   def handle_call({:get_entry, index}, _from, state) do
-    result = LogStore.get_log(state.log_store, index)
+    result = LogStore.get_entry(state.log_store, index)
     {:reply, result, state}
   end
 
@@ -101,8 +105,8 @@ defmodule TonicRaft.Log do
   end
 
   def handle_call({:set_metadata, cand, term}, _from, state) do
-    metadata = %{voted_for: cand, term: term}
-    :ok = LogStore.write_metadata(state.log_store, metadata)
+    metadata = %Metadata{voted_for: cand, term: term}
+    :ok = LogStore.store_metadata(state.log_store, metadata)
     {:reply, :ok, %{state | metadata: metadata}}
   end
 
@@ -118,38 +122,7 @@ defmodule TonicRaft.Log do
 
   defp log_name(name), do: :"#{name}_log"
 
-  defp apply_entry(state, %{type: 3, data: data}=entry) do
+  defp apply_entry(state, %{type: :config, data: data}) do
     %{state | configuration: data}
   end
-
-  # alias TonicRaft.Log.Entry
-
-  # @typep index :: pos_integer()
-
-  # @type t :: %__MODULE__{
-  #   entries: %{required(index()) => Entry.t},
-  #   commit_index: index(),
-  #   last_applied: index(),
-  # }
-
-  # @doc """
-  # Initializes a new log.
-  # """
-  # def new, do: %Log{}
-
-  # @doc """
-  # Returns all entries greater then or equal to a given index.
-  # """
-  # @spec from_index(Log.t, index()) :: [Entry.t]
-
-  # def from_index(%{entries: entries}, index) do
-  #   entries
-  #   |> Enum.filter(fn {k, _} -> k >= index end)
-  #   |> to_list
-  # end
-
-  # def to_list(entries) do
-  #   Enum.map(entries, fn {_, entry} -> entry end)
-  # end
-
 end
