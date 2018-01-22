@@ -40,6 +40,16 @@ defmodule TonicRaft.Log do
   end
 
   @doc """
+  Gets the current term.
+  """
+  @spec get_term(atom()) :: log_term()
+
+  def get_term(name) do
+    %{term: term} = get_metadata(name)
+    term
+  end
+
+  @doc """
   Gets the current metadata for the server.
   """
   @spec get_metadata(atom()) :: metadata()
@@ -57,9 +67,52 @@ defmodule TonicRaft.Log do
     call(name, {:set_metadata, candidate, term})
   end
 
+  @doc """
+  Gets the current configuration.
+  TODO - Figure out if this is the right place for this.
+  """
   def get_configuration(name), do: call(name, :get_configuration)
 
-  def last_index(name), do: call(name, :last_index)
+  @doc """
+  Returns the last entry in the log. If there are no entries then it returns an
+  `:error`.
+  """
+  @spec last_entry(atom()) :: {:ok, Entry.t} | :empty
+
+  def last_entry(name) do
+    call(name, :last_entry)
+  end
+
+  @doc """
+  Returns the index of the last entry in the log.
+  """
+  @spec last_index(atom()) :: non_neg_integer()
+
+  def last_index(name) do
+    case last_entry(name) do
+      {:ok, %{index: index}} ->
+        index
+
+      :empty ->
+        0
+    end
+  end
+
+  @doc """
+  Returns the term of the last entry in the log. If the log is empty returns
+  0.
+  """
+  @spec last_term(atom()) :: non_neg_integer()
+
+  def last_term(name) do
+    case last_entry(name) do
+      {:ok, %{term: term}} ->
+        term
+
+      :empty ->
+        0
+    end
+  end
 
   def init({name, opts}) do
     Logger.info("#{log_name(name)}: Restoring old state", metadata: name)
@@ -114,8 +167,14 @@ defmodule TonicRaft.Log do
     {:reply, config, state}
   end
 
-  def handle_call(:last_index, _from, state) do
-    {:reply, state.last_index, state}
+  def handle_call(:last_entry, _from, state) do
+    case LogStore.last_entry(state.log_store) do
+      {:ok, :empty} ->
+        {:reply, :empty, state}
+
+      {:ok, entry} ->
+        {:reply, {:ok, entry}, state}
+    end
   end
 
   defp call(name, msg), do: GenServer.call(log_name(name), msg)

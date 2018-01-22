@@ -61,16 +61,16 @@ defmodule TonicRaft.LogStore.RocksDB do
   end
 
   @impl true
-  def last_index(%{logs: db}) do
+  def last_entry(%{logs: db}) do
     {:ok, itr} = :rocksdb.iterator(db, [])
 
     case :rocksdb.iterator_move(itr, :last) do
-      {:ok, index, _value} ->
+      {:ok, _index, value} ->
         :rocksdb.iterator_close(itr)
-        index
+        {:ok, value}
       {:error, :invalid_iterator} ->
         :rocksdb.iterator_close(itr)
-        "0"
+        {:ok, :empty}
     end
   end
 

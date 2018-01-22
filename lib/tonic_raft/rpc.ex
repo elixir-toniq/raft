@@ -56,7 +56,6 @@ defmodule TonicRaft.RPC do
              | %RequestVoteReq{}
              | %RequestVoteResp{}
 
-
   # def replicate(state, log) do
   #   state.configurations.latest.servers
   #   |> Enum.reject(self())
