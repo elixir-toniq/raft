@@ -15,6 +15,9 @@ defmodule TonicRaft.Server.Supervisor do
   end
 
   def stop_peer(name) do
+    require Logger
+    Logger.info("#{name}: Shutting down")
+
     pid =
       name
       |> PeerSupervisor.sup_name

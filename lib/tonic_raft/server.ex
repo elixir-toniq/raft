@@ -60,6 +60,12 @@ defmodule TonicRaft.Server do
     GenStateMachine.call(peer, {:write, cmd})
   end
 
+  @doc """
+  Reads the current state from the state machine. This is done in a highly
+  consistent manner. Reads must be executed on a leader and the leader must
+  confirm that they have not been deposed before processing the read operation
+  as described in the raft paper, section 8: Client Interaction.
+  """
   def read(peer, cmd) do
     GenStateMachine.call(peer, {:read, cmd})
   end
@@ -126,6 +132,8 @@ defmodule TonicRaft.Server do
 
     entry = Entry.command(state.current_term, cmd)
     {:ok, last_index} = Log.append(state.me, [entry])
+    new_match_index = Map.put(state.match_index, state.me, last_index)
+    state = %{state | match_index: new_match_index}
     send_append_entries(state)
     state = add_client_req(state, id, from, last_index)
     {:next_state, :leader, state, []}
@@ -195,7 +203,7 @@ defmodule TonicRaft.Server do
   def follower(:info, :timeout, %{configuration: config}=state) do
     case Configuration.has_vote?(state.me, config) do
       true ->
-        Logger.debug("#{state.me}: Becoming candidate")
+        Logger.warn("#{state.me}: Becoming candidate")
         new_state = become_candidate(state)
         {:next_state, :candidate, new_state}
       false ->
@@ -211,7 +219,8 @@ defmodule TonicRaft.Server do
   # bootstrap a new server.
   def follower({:call, from}, {:set_configuration, {id, peers}},
                               %{configuration: %{state: :none}}=state) do
-    Logger.debug("Setting initial configuration on #{state.me}")
+    Logger.debug("#{state.me}: Setting initial configuration")
+
     case Enum.member?(peers, state.me) do
       true ->
         config = Configuration.reconfig(state.configuration, peers)
@@ -229,13 +238,13 @@ defmodule TonicRaft.Server do
     end
   end
 
-  def follower({:call, from}, {:set_configuration, _change}, _state) do
-    Logger.warn("Can't set config on a follower that already has a configuration")
+  def follower({:call, from}, {:set_configuration, _change}, state) do
+    Logger.warn("#{state.me}: Can't set config on a follower that already has a configuration")
     {:keep_state_and_data, [{:reply, from, {:error, :not_leader}}]}
   end
 
-  def follower({:call, from}, :write, _state) do
-    Logger.warn("Can't write on a server that isn't the leader")
+  def follower({:call, from}, :write, state) do
+    Logger.warn("#{state.me}: Can't write on a server that isn't the leader")
     {:keep_state_and_data, [{:reply, from, {:error, :not_leader}}]}
   end
 
@@ -263,7 +272,10 @@ defmodule TonicRaft.Server do
     }
 
     if consistent?(req, state) do
-      Logger.debug(fn -> "#{state.me}: Log is consistent. Appending #{Enum.count(req.entries)} new entries" end)
+      Logger.debug(fn ->
+        "#{state.me}: Log is consistent. Appending #{Enum.count(req.entries)}" \
+        <> " new entries"
+      end)
       {:ok, index} = Log.append(state.me, req.entries)
       configuration = Log.get_configuration(state.me)
       state = commit_entries(req.leader_commit, state)
@@ -272,7 +284,7 @@ defmodule TonicRaft.Server do
       {:next_state, :follower, state, [{:reply, from, resp}]}
     else
       Logger.warn("#{state.me}: Log is out of date. Failing append")
-      {:keep_state_and_data, [{:reply, from, resp}]}
+      {:next_state, :follower, state, [{:reply, from, resp}]}
     end
   end
 
@@ -298,7 +310,7 @@ defmodule TonicRaft.Server do
   end
 
   def candidate(:info, :timeout, state) do
-    Logger.warn("#{state.me}: Timeout reached. Starting Election")
+    Logger.warn("#{state.me}: Timeout reached. Re-starting Election")
 
     {:next_state, :candidate, become_candidate(state)}
   end
@@ -315,6 +327,7 @@ defmodule TonicRaft.Server do
   # A peer is trying to become leader. If it has a higher term then we
   # need to step down and become a follower
   def candidate({:call, from}, %RequestVoteReq{}=req, state) do
+    Logger.warn("#{state.me}: Received vote request with higher term. Stepping down")
     handle_vote(from, req, state)
   end
 
@@ -343,6 +356,20 @@ defmodule TonicRaft.Server do
     end
   end
 
+  # A server is sending us append entries which must mean they've been elected
+  # leader. We should fallback to follower status
+  def candidate({:call, _from}, %AppendEntriesReq{term: term}, 
+                %{current_term: our_term}=state) when term >= our_term do
+    Logger.debug("#{state.me}: Received append entries. Stepping down")
+    step_down(state, term)
+  end
+
+  # Ignore append entries that are below our current term
+  def candidate({:call, _from}, %AppendEntriesReq{}, state) do
+    Logger.debug("#{state.me}: Ignoring stale append entries")
+    {:keep_state_and_data, []}
+  end
+
   def candidate(msg, event, data) do
     handle_event(msg, event, :candidate, data)
   end
@@ -353,10 +380,12 @@ defmodule TonicRaft.Server do
 
   def handle_event({:call, from}, :status, current_state, state) do
     status = %{
-      name: state.config.name,
+      name: state.me,
       current_state: current_state,
       leader: state.leader,
       configuration: state.configuration,
+      last_index: Log.last_index(state.me),
+      last_term: Log.last_term(state.me),
     }
 
     {:keep_state_and_data, [{:reply, from, status}]}
@@ -368,6 +397,15 @@ defmodule TonicRaft.Server do
     end)
 
     {:keep_state_and_data, []}
+  end
+
+  # TODO - We need to error any pending client requests due to an
+  # initial misconfiguration.
+  defp step_down(state, term) do
+    state = %{state | current_term: term, leader: :none}
+    Log.set_metadata(state.me, :none, term)
+    state = reset_timeout(state)
+    {:next_state, :follower, state, []}
   end
 
   defp handle_vote(from, req, state) do
@@ -519,6 +557,10 @@ defmodule TonicRaft.Server do
     }
   end
 
+  defp append(state, entry) do
+    {:ok, _index} = Log.append(state.me, [entry])
+    send_append_entries(state)
+  end
 
   defp append(state, id, from, entry) do
     {:ok, index} = Log.append(state.me, [entry])
@@ -571,6 +613,11 @@ defmodule TonicRaft.Server do
       commit_index > state.commit_index and safe_to_commit?(commit_index, state) ->
         Logger.debug("Committing to index #{commit_index}")
         commit_entries(commit_index, state)
+
+      commit_index == state.commit_index ->
+        Logger.debug("#{state.me}: No new entries to commit.")
+        state
+
       true ->
         Logger.debug("#{state.me}: Not committing since there isn't a quorum yet.")
         state
@@ -586,12 +633,13 @@ defmodule TonicRaft.Server do
     end
   end
 
-  defp become_candidate(%{followers: followers}=state) do
+  defp become_candidate(state) do
     state = State.increment_term(state)
     state = %{state | leader: :none}
     :ok = vote_for_myself(state)
 
-    followers
+    state.configuration
+    |> Configuration.followers(state.me)
     |> Enum.map(request_vote(state))
     |> RPC.broadcast
 
@@ -600,27 +648,35 @@ defmodule TonicRaft.Server do
 
   # TODO - Clean all this nonsense up
   defp become_leader(state) do
+    index = Log.last_index(state.me)
+    next_index = initial_indexes(state, index+1)
+    match_index = initial_indexes(state, 0)
+    state = %{state | next_index: next_index, match_index: match_index}
+    state = %{state | leader: state.me}
+    state = reset_timeout(heartbeat_timeout(), state)
+
     case state.init_config do
       {id, from} ->
         Logger.debug("#{state.me}: Becoming leader with initial config")
-        index = Log.last_index(state.me)
-        next_index = initial_indexes(state, index+1)
-        match_index = initial_indexes(state, 0)
-        state = %{state | next_index: next_index, match_index: match_index}
-        state = %{state | leader: state.me}
         entry = Entry.configuration(state.current_term, state.configuration)
         state = append(state, id, from, entry)
         send_append_entries(state)
-        state = reset_timeout(heartbeat_timeout(), state)
         %{state | init_config: :complete}
 
-      _ ->
-        state
+      :undefined ->
+        entry = Entry.noop(state.current_term)
+        append(state, entry)
+        %{state | init_config: :complete}
+
+      :complete ->
+        entry = Entry.noop(state.current_term)
+        append(state, entry)
     end
   end
 
-  defp initial_indexes(%{followers: followers}, index) do
-    followers
+  defp initial_indexes(state, index) do
+    state.configuration
+    |> Configuration.servers
     |> Enum.map(fn f -> {f, index} end)
     |> Enum.into(%{})
   end
@@ -642,17 +698,20 @@ defmodule TonicRaft.Server do
   defp commit_entries(leader_index, %{commit_index: commit_index}=state)
                                    when commit_index >= leader_index, do: state
 
+  # Starting at the last known index and working towards the new last index
+  # apply each log to the state machine
   defp commit_entries(leader_index, %{commit_index: commit_index}=state) do
     last_index = min(leader_index, Log.last_index(state.me))
 
-    # Starting at the last known index and working towards the new last index
-    # apply each log to the state machine
     (commit_index+1..last_index)
     |> Enum.reduce(state, &commit_entry/2)
   end
 
   defp commit_entry(index, state) do
     case Log.get_entry(state.me, index) do
+      {:ok, %{type: :noop}} ->
+        %{state | commit_index: index}
+
       {:ok, %{type: :command, data: cmd}=log} ->
         {result, new_sms} = apply_log_to_state_machine(state, cmd)
         respond_to_client_requests(state.client_reqs, log, {:ok, result})
@@ -691,8 +750,9 @@ defmodule TonicRaft.Server do
     end
   end
 
-  defp send_append_entries(%{followers: followers}=state) do
-    followers
+  defp send_append_entries(state) do
+    state.configuration
+    |> Configuration.followers(state.me)
     |> Enum.map(send_entry(state))
     |> RPC.broadcast
   end

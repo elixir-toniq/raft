@@ -50,7 +50,7 @@ defmodule TonicRaft.LogStore do
   """
   @spec store_entries(db(), [Entry.t]) :: {:ok, index()}
 
-  def store_entries(db, entries) do
+  def store_entries(db, entries) when is_list(entries) do
     last_index = Enum.reduce entries, nil, fn entry, _ ->
       index = encode_index(entry.index)
       encoded = encode(entry)

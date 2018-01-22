@@ -1,6 +1,6 @@
 defmodule TonicRaft.Configuration do
   @derive Jason.Encoder
-  defstruct [state: :none, old_servers: [], new_servers: [], index: 0, latest: %{}]
+  defstruct [state: :none, old_servers: [], new_servers: [], index: 0]
 
   alias __MODULE__
 
@@ -83,6 +83,14 @@ defmodule TonicRaft.Configuration do
 
   def followers(%{state: :stable, old_servers: servers}, peer) do
     Enum.reject(servers, & &1 == peer)
+  end
+
+  @doc """
+  Returns the list of all servers based on the configuration state.
+  """
+  @spec servers(Configuration.t) :: [Server.t]
+  def servers(%{state: :stable, old_servers: servers}) do
+    servers
   end
 
   @doc """
