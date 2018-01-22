@@ -4,29 +4,34 @@ defmodule TonicRaftTest do
 
   alias TonicRaft.{Config, Server}
 
-  # defmodule StackTestFSM do
-  #   @behaviour TonicRaft.FSM
+  defmodule StackTestFSM do
+    @behaviour TonicRaft.StateMachine
 
-  #   def init(_) do
-  #     []
-  #   end
+    def init(_) do
+      []
+    end
 
-  #   def handle_query(stack) do
-  #     {:reply, {:ok, stack}, stack}
-  #   end
+    def handle_read(:length, stack) do
+      {Enum.count(stack), stack}
+    end
 
-  #   def handle_apply({:enqueue, item}, stack) do
-  #     {:reply, :ok, [item | stack]}
-  #   end
+    def handle_read(:all, stack) do
+      {stack, stack}
+    end
 
-  #   def handle_apply(:dequeue, [item | stack]) do
-  #     {:reply, {:ok, item}, stack}
-  #   end
+    def handle_write({:enqueue, item}, stack) do
+      new_stack = [item | stack]
+      {Enum.count(new_stack), new_stack}
+    end
 
-  #   def handle_apply(:dequeue, stack) do
-  #     {:reply, {:error, :empty}, stack}
-  #   end
-  # end
+    def handle_write(:dequeue, [item | stack]) do
+      {item, stack}
+    end
+
+    def handle_write(:dequeue, []) do
+      {:empty, []}
+    end
+  end
 
   setup do
     :tonic_raft
@@ -38,6 +43,12 @@ defmodule TonicRaftTest do
       |> Enum.map(&File.rm_rf!/1)
     end)
 
+    on_exit fn ->
+      for s <- [:s1, :s2, :s3] do
+        TonicRaft.stop_node(s)
+      end
+    end
+
     :ok
   end
 
@@ -45,9 +56,9 @@ defmodule TonicRaftTest do
     # Start each node individually with no configuration. Each node will
     # come up as a follower and remain there since they have no known
     # configuration yet.
-    {:ok, _s1} = TonicRaft.start_node(:s1, %Config{})
-    {:ok, _s2} = TonicRaft.start_node(:s2, %Config{})
-    {:ok, _s3} = TonicRaft.start_node(:s3, %Config{})
+    {:ok, _s1} = TonicRaft.start_node(:s1, %Config{state_machine: StackTestFSM})
+    {:ok, _s2} = TonicRaft.start_node(:s2, %Config{state_machine: StackTestFSM})
+    {:ok, _s3} = TonicRaft.start_node(:s3, %Config{state_machine: StackTestFSM})
 
     # Tell a server about other nodes
     nodes = [:s1, :s2, :s3]
@@ -62,35 +73,33 @@ defmodule TonicRaftTest do
     assert TonicRaft.leader(:s3) == :s1
   end
 
-  #test "log replication with 3 servers" do
-  #  base_config = %Config{
-  #    state_machine: StackTestFSM,
-  #    name: :none,
-  #  }
-  #  configuration = %Configuration{
-  #    old_servers: [
-  #      Configuration.voter(:s1, node()),
-  #      Configuration.voter(:s2, node()),
-  #      Configuration.voter(:s3, node()),
-  #    ],
-  #    index: 1,
-  #  }
-  #  {:ok, s1} = TonicRaft.bootstrap(%Config{base_config | name: :s1}, configuration)
-  #  {:ok, s2} = TonicRaft.bootstrap(%Config{base_config | name: :s2}, configuration)
-  #  {:ok, s3} = TonicRaft.bootstrap(%Config{base_config | name: :s3}, configuration)
+  test "log replication with 3 servers" do
+    {:ok, _s1} = TonicRaft.start_node(:s1, %Config{state_machine: StackTestFSM})
+    {:ok, _s2} = TonicRaft.start_node(:s2, %Config{state_machine: StackTestFSM})
+    {:ok, _s3} = TonicRaft.start_node(:s3, %Config{state_machine: StackTestFSM})
 
-  #  leader = wait_for_election([s1, s2, s3])
+    # Tell a server about other nodes
+    nodes = [:s1, :s2, :s3]
+    {:ok, _configuration} = TonicRaft.set_configuration(:s1, nodes)
 
-  #  assert :ok          = TonicRaft.Server.apply(leader, {:enqueue, 1})
-  #  assert :ok          = TonicRaft.Server.apply(leader, {:enqueue, 2})
-  #  assert {:ok, 2}     = TonicRaft.Server.apply(leader, :dequeue)
-  #  assert :ok          = TonicRaft.Server.apply(leader, {:enqueue, 3})
-  #  assert {:ok, [3,1]} = TonicRaft.Server.query(leader)
+    # Ensure that s1 has been elected leader which means our configuration has
+    # been shared throughout the cluster.
+    _ = wait_for_election(nodes)
 
-  #  # Ensure that the messages are replicated to all servers
-  #  #
-  #  # Ensure that the fsms all have logs applied
-  #end
+    assert TonicRaft.leader(:s1) == :s1
+    assert TonicRaft.leader(:s2) == :s1
+    assert TonicRaft.leader(:s3) == :s1
+
+    assert {:ok, 1}     = TonicRaft.write(:s1, {:enqueue, 1})
+    assert {:ok, 2}     = TonicRaft.write(:s1, {:enqueue, 2})
+    assert {:ok, 2}     = TonicRaft.write(:s1, :dequeue)
+    assert {:ok, 2}     = TonicRaft.write(:s1, {:enqueue, 4})
+    assert {:ok, [4,1]} = TonicRaft.read(:s1, :all)
+
+    # Ensure that the messages are replicated to all servers
+    #
+    # Ensure that the fsms all have logs applied
+  end
 
   # test "leader failure" do
     # cluster = make_cluster(3)

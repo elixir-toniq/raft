@@ -14,14 +14,31 @@ defmodule TonicRaft do
   end
 
   @doc """
-  Used to apply a new change to the application fsm. Leader ensures that this
-  is done in consistent manner. This operation blocks until the log has been
-  replicated to a majority of servers.
+  Gracefully stops the node.
   """
-  @spec apply(term(), list()) :: {:ok, term()} | {:error, :timeout} | {:error, :not_leader}
+  def stop_node(name) do
+    TonicRaft.Server.Supervisor.stop_peer(name)
+  end
 
-  def apply(_cmd, _opts) do
-    {:ok, :not_implemented}
+  @doc """
+  Used to apply a new change to the application fsm. This is done in consistent
+  manner. This operation blocks until the log has been replicated to a
+  majority of servers.
+  """
+  @spec write(peer(), term(), list()) :: {:ok, term()} | {:error, :timeout} | {:error, :not_leader}
+
+  def write(leader, cmd, _opts \\ []) do
+    id = UUID.uuid4()
+    TonicRaft.Server.write(leader, {id, cmd})
+  end
+
+  @doc """
+  Reads state that has been applied to the state machine.
+  """
+  @spec read(peer(), list()) :: {:ok, term()} | {:error, :timeout} | {:error, :not_leader}
+
+  def read(leader, cmd, _opts \\ []) do
+    TonicRaft.Server.read(leader, {UUID.uuid4(), cmd})
   end
 
   @doc """

@@ -184,4 +184,8 @@ defmodule TonicRaft.Log do
   defp apply_entry(state, %{type: :config, data: data}) do
     %{state | configuration: data}
   end
+
+  defp apply_entry(state, _) do
+    state
+  end
 end
