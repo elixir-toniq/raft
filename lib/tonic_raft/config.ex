@@ -2,7 +2,7 @@ defmodule TonicRaft.Config do
   defstruct [
     state_machine: :none,
     name: :none,
-    min_election_timeout: 150,
+    min_election_timeout: 300,
     max_election_timeout: 1_000,
     heartbeat_timeout: 25,
     data_dir: "",

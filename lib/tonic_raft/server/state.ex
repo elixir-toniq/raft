@@ -16,7 +16,7 @@ defmodule TonicRaft.Server.State do
     election_timer: nil,
     leader: :none,
     followers: [],
-    init_config: :complete,
+    init_config: :undefined,
     timer: nil,
     last_index: 0,
     commit_index: 0,

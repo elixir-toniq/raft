@@ -32,7 +32,7 @@ defmodule TonicRaft.Log.Entry do
   @typedoc """
   The command or configuration data sent by the client.
   """
-  @type data :: term()
+  @type data :: :none | term()
 
   @typedoc """
   The Entry struct.
@@ -62,6 +62,15 @@ defmodule TonicRaft.Log.Entry do
       type: :command,
       term: term,
       data: cmd,
+    }
+  end
+
+  def noop(term) do
+    %__MODULE__{
+      index: :none,
+      type: :noop,
+      term: term,
+      data: :none,
     }
   end
 end

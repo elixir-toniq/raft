@@ -118,32 +118,26 @@ defmodule TonicRaft.Log do
     Logger.info("#{log_name(name)}: Restoring old state", metadata: name)
     {:ok, log_store} = LogStore.open(Config.db_path(name, opts))
 
-    metadata            = LogStore.get_metadata(log_store)
-    last_index          = LogStore.last_index(log_store)
+    metadata = LogStore.get_metadata(log_store)
+    last_index = LogStore.last_index(log_store)
 
-    # TODO - This is broken. It needs to rebuild this from logs.
-    configuration       = %TonicRaft.Configuration{}
+    state = %{
+      log_store: log_store,
+      metadata: metadata,
+      last_index: last_index,
+      configuration: nil,
+    }
+    state = init_log(state)
 
     # start_index         = 0 # TODO: This should be the index of the last snapshot if there is one
     # logs                = LogStore.slice(log_store, start_index..last_index)
     # configuration       = Configuration.restore(logs)
 
-    state = %{
-      log_store: log_store,
-      configuration: configuration,
-      metadata: metadata,
-      last_index: last_index,
-    }
     {:ok, state}
   end
 
   def handle_call({:append, entries}, _from, state) do
-    state = Enum.reduce(entries, state, fn entry, state ->
-      entry = %{entry | index: state.last_index+1}
-      {:ok, last_index} = LogStore.store_entries(state.log_store, [entry])
-      state = apply_entry(state, entry)
-      %{state | last_index: last_index}
-    end)
+    state = append_entries(state, entries)
 
     {:reply, {:ok, state.last_index}, state}
   end
@@ -187,5 +181,27 @@ defmodule TonicRaft.Log do
 
   defp apply_entry(state, _) do
     state
+  end
+
+  defp init_log(state) do
+    case LogStore.has_data?(state.log_store) do
+      true ->
+        state
+      false ->
+        configuration = %TonicRaft.Configuration{}
+        entry = Entry.configuration(0, configuration)
+        entry = %{entry | index: 0}
+        {:ok, last_index} = LogStore.store_entries(state.log_store, [entry])
+        %{state | configuration: configuration, last_index: last_index}
+    end
+  end
+
+  defp append_entries(state, entries) do
+    Enum.reduce entries, state, fn entry, state ->
+      entry = %{entry | index: state.last_index+1}
+      {:ok, last_index} = LogStore.store_entries(state.log_store, [entry])
+      state = apply_entry(state, entry)
+      %{state | last_index: last_index}
+    end
   end
 end

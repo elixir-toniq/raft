@@ -51,6 +51,16 @@ defmodule TonicRaft do
   end
 
   @doc """
+  Returns the current status for a peer. This is used for debugging and
+  testing purposes only.
+  """
+  @spec status(peer()) :: %{}
+
+  def status(name) do
+    TonicRaft.Server.status(name)
+  end
+
+  @doc """
   Sets peers configuration. The new configuration will be merged with any
   existing configuration.
   """
