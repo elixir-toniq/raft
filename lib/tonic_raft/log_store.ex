@@ -17,6 +17,8 @@ defmodule TonicRaft.LogStore do
 
   @callback get_entry(db(), key()) :: {:ok, encoded()} | {:error, :not_found}
 
+  @callback last_entry(db()) :: {:ok, encoded()} | {:ok, :empty}
+
   @callback store_metadata(db(), encoded()) :: :ok | {:error, any()}
 
   @callback get_metadata(db()) :: {:ok, encoded()} | {:error, :not_found}
@@ -24,8 +26,6 @@ defmodule TonicRaft.LogStore do
   @callback close(db()) :: :ok | {:error, any()}
 
   @callback destroy(db()) :: :ok | {:error, any()}
-
-  @callback last_index(db()) :: key()
 
   @doc """
   Opens a new or existing database at the given path.
@@ -100,14 +100,34 @@ defmodule TonicRaft.LogStore do
   end
 
   @doc """
+  Retrieves the last entry from the log. Returns `:empty` if the log is empty.
+  """
+  @spec last_entry(db()) :: {:ok, Entry.t} | {:ok, :empty}
+
+  def last_entry(db) do
+    case adapter().last_entry(db) do
+      {:ok, :empty} ->
+        {:ok, :empty}
+
+      {:ok, value} ->
+        {:ok, decode(value)}
+    end
+  end
+
+  @doc """
   Retrieves the last index thats been saved to stable storage.
   If the database is empty then 0 is returned.
   """
   @spec last_index(db()) :: index()
 
   def last_index(db) do
-    index = adapter().last_index(db)
-    decode_index(index)
+    case last_entry(db) do
+      {:ok, %{index: index}} ->
+        index
+
+      {:ok, :empty} ->
+        0
+    end
   end
 
   @doc """
@@ -136,7 +156,7 @@ defmodule TonicRaft.LogStore do
     last_index(db) > 0
   end
 
-  defp decode(value) do
+  defp decode(value) when is_binary(value) do
     :erlang.binary_to_term(value)
   end
 

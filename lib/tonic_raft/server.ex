@@ -178,6 +178,7 @@ defmodule TonicRaft.Server do
         new_state = become_candidate(state)
         {:next_state, :candidate, new_state}
       false ->
+        Logger.debug("#{state.me}: Skipping until we have a vote")
         state = reset_timeout(state)
         state = %{state | leader: :none}
         {:next_state, :follower, state}
@@ -357,12 +358,15 @@ defmodule TonicRaft.Server do
   defp vote_granted?(req, meta, state) do
     cond do
       req_is_behind?(req, state) ->
+        Logger.debug("#{state.me}: Request is behind ")
         false
 
       voted_for_someone_else?(req, meta) ->
+        Logger.debug("#{state.me}: Already voted in this term")
         false
 
       !candidate_up_to_date?(req, state) ->
+        Logger.debug("#{state.me}: Candidate is not up to date. Rejecting vote")
         false
 
       true ->
@@ -373,10 +377,27 @@ defmodule TonicRaft.Server do
   defp req_is_behind?(%{term: rt}, %{current_term: ct}), do: rt < ct
 
   defp voted_for_someone_else?(%{term: term, from: candidate},
-                               %{term: vote_term, voted_for: voted_for}),
-    do: vote_term == term && voted_for != :none && candidate != voted_for
+                               %{term: vote_term, voted_for: voted_for}) do
+    vote_term == term && voted_for != :none && candidate != voted_for
+  end
 
-  defp candidate_up_to_date?(_, _), do: true
+  defp candidate_up_to_date?(%{last_log_index: c_term, last_log_term: c_index},
+                             %{me: me}) do
+    our_term   = Log.last_term(me)
+    last_index = Log.last_index(me)
+    up_to_date?(c_term, c_index, our_term, last_index)
+  end
+
+  def up_to_date?(term_a, index_a, term_b, index_b) do
+    cond do
+      term_a < term_b ->
+        false
+      term_a == term_b && index_a < index_b ->
+        false
+      true ->
+        true
+    end
+  end
 
   defp election_timeout(%{config: config}) do
     Config.election_timeout(config)
@@ -403,28 +424,6 @@ defmodule TonicRaft.Server do
 
   defp persist_vote(name, term, candidate) do
     :ok = Log.set_metadata(name, candidate, term)
-  end
-
-  defp request_vote(state) do
-    fn server ->
-      %RPC.RequestVoteReq{
-        to: server,
-        from: state.me,
-        term: state.current_term,
-        candidate_id: state.me,
-        last_log_index: state.last_index,
-        last_log_term: %{},
-      }
-    end
-  end
-
-  defp vote_resp(server, state, vote_granted) do
-    %RequestVoteResp{
-      to: server,
-      from: state.me,
-      term: state.current_term,
-      vote_granted: vote_granted,
-    }
   end
 
   defp previous(_state, 1), do: {0, 0}
@@ -463,6 +462,32 @@ defmodule TonicRaft.Server do
       }
     end
   end
+
+  defp request_vote(state) do
+    fn server ->
+      last_index = Log.last_index(state.me)
+      last_term  = Log.last_term(state.me)
+
+      %RPC.RequestVoteReq{
+        to: server,
+        from: state.me,
+        term: state.current_term,
+        candidate_id: state.me,
+        last_log_index: last_index,
+        last_log_term: last_term,
+      }
+    end
+  end
+
+  defp vote_resp(server, state, vote_granted) do
+    %RequestVoteResp{
+      to: server,
+      from: state.me,
+      term: state.current_term,
+      vote_granted: vote_granted,
+    }
+  end
+
 
   defp append(state, id, from, entry) do
     {:ok, index} = Log.append(state.me, [entry])
@@ -541,7 +566,7 @@ defmodule TonicRaft.Server do
       term < current_term ->
         state
 
-      true                -> 
+      true ->
         state
     end
   end
