@@ -56,12 +56,12 @@ defmodule TonicRaft.Server do
   """
   # @spec apply(server(), term()) :: :ok | {:error, :timeout} | {:error, :not_leader}
 
-  def apply(sm, msg) do
-    GenStateMachine.call(sm, {:apply, msg})
+  def write(peer, cmd) do
+    GenStateMachine.call(peer, {:write, cmd})
   end
 
-  def query(sm) do
-    GenStateMachine.call(sm, :query)
+  def read(peer, cmd) do
+    GenStateMachine.call(peer, {:read, cmd})
   end
 
   @doc """
@@ -99,12 +99,14 @@ defmodule TonicRaft.Server do
   * - set the configuration
   """
   def init({:follower, name, config}) do
-    Logger.info("#{name}: Starting FSM")
+    Logger.info("#{name}: Starting Raft state machine")
 
     %{term: current_term} = Log.get_metadata(name)
     configuration = Log.get_configuration(name)
     state = %{ @initial_state |
       me: name,
+      state_machine: config.state_machine,
+      state_machine_state: config.state_machine.init(name),
       config: config,
       current_term: current_term,
       configuration: configuration,
@@ -117,6 +119,24 @@ defmodule TonicRaft.Server do
   #
   # Leader callbacks
   #
+
+  # Write new entries to the log and replicate
+  def leader({:call, from}, {:write, {id, cmd}}, state) do
+    Logger.info("Writing new command to log")
+
+    entry = Entry.command(state.current_term, cmd)
+    {:ok, last_index} = Log.append(state.me, [entry])
+    send_append_entries(state)
+    state = add_client_req(state, id, from, last_index)
+    {:next_state, :leader, state, []}
+  end
+
+  def leader({:call, from}, {:read, {id, cmd}}, state) do
+    Logger.info("Leader received read request")
+    state = add_read_req(state, id, from, cmd)
+    send_append_entries(state)
+    {:next_state, :leader, reset_timeout(heartbeat_timeout(), state)}
+  end
 
   def leader(:info, :timeout, state) do
     Logger.debug("#{state.me}: Sending heartbeats")
@@ -157,6 +177,7 @@ defmodule TonicRaft.Server do
     next_index = Map.put(state.next_index, from, index+1)
     state = %{state | match_index: match_index, next_index: next_index}
     state = maybe_commit_logs(state)
+    state = maybe_send_read_replies(state)
 
     {:next_state, :leader, state}
   end
@@ -210,6 +231,11 @@ defmodule TonicRaft.Server do
 
   def follower({:call, from}, {:set_configuration, _change}, _state) do
     Logger.warn("Can't set config on a follower that already has a configuration")
+    {:keep_state_and_data, [{:reply, from, {:error, :not_leader}}]}
+  end
+
+  def follower({:call, from}, :write, _state) do
+    Logger.warn("Can't write on a server that isn't the leader")
     {:keep_state_and_data, [{:reply, from, {:error, :not_leader}}]}
   end
 
@@ -277,7 +303,12 @@ defmodule TonicRaft.Server do
     {:next_state, :candidate, become_candidate(state)}
   end
 
-  def candidate({:call, from}, {:config_change, _change}, _state) do
+  def candidate({:call, from}, {:set_configuration, _change}, _state) do
+    {:keep_state_and_data, [{:reply, from, {:error, :not_leader}}]}
+  end
+
+  def candidate({:call, from}, :write, _state) do
+    Logger.warn("Can't write to a server that isn't the leader")
     {:keep_state_and_data, [{:reply, from, {:error, :not_leader}}]}
   end
 
@@ -495,6 +526,43 @@ defmodule TonicRaft.Server do
     %{state | client_reqs: [req | state.client_reqs]}
   end
 
+  defp maybe_send_read_replies(%{configuration: conf, match_index: mi}=state) do
+    Logger.debug("Sending any eligible read requests")
+
+    commit_index = Configuration.quorum_max(conf, mi)
+    {elegible, remaining} = elegible_requests(state, commit_index)
+    state = read_and_send(state, elegible)
+    %{state | read_reqs: remaining}
+  end
+
+  defp add_read_req(state, id, from, cmd) do
+    req = %{
+      id: id,
+      index: state.commit_index,
+      from: from,
+      cmd: cmd,
+      term: state.current_term,
+    }
+
+    %{state | read_reqs: [req | state.read_reqs]}
+  end
+
+  defp read_and_send(%{state_machine: sm, state_machine_state: sms}=state, reqs) do
+    new_state = Enum.reduce reqs, sms, fn req, s ->
+      {result, new_state} = sm.handle_read(req.cmd, s)
+      respond_to_client(req, {:ok, result})
+      new_state
+    end
+
+    %{state | state_machine_state: new_state}
+  end
+
+  defp elegible_requests(%{read_reqs: reqs}, index) do
+    elegible  = Enum.take_while(reqs, fn %{index: i} -> index >= i end)
+    remaining = Enum.drop_while(reqs, fn %{index: i} -> index >= i end)
+    {elegible, remaining}
+  end
+
   # TODO - pull this apart so it just returns the new commit index and we can
   # take actions in the leader callback
   defp maybe_commit_logs(state) do
@@ -585,15 +653,18 @@ defmodule TonicRaft.Server do
 
   defp commit_entry(index, state) do
     case Log.get_entry(state.me, index) do
+      {:ok, %{type: :command, data: cmd}=log} ->
+        {result, new_sms} = apply_log_to_state_machine(state, cmd)
+        respond_to_client_requests(state.client_reqs, log, {:ok, result})
+        %{state | commit_index: index, state_machine_state: new_sms}
+
       {:ok, %{type: :config}=log} ->
         # TODO - This is probably wrong. We actually need to update the
         # configuration with whats in the log.
         rpy = {:ok, state.configuration}
         respond_to_client_requests(state.client_reqs, log, rpy)
+        %{state | commit_index: index}
     end
-
-    # TODO - actually apply things to the backend state machine
-    %{state | commit_index: index}
   end
 
   defp respond_to_client_requests(reqs, log, rpy) do
@@ -624,6 +695,15 @@ defmodule TonicRaft.Server do
     followers
     |> Enum.map(send_entry(state))
     |> RPC.broadcast
+  end
+
+  defp apply_log_to_state_machine(%{state_machine: sm, state_machine_state: sms}, cmd) do
+    sm.handle_write(cmd, sms)
+  end
+
+  defp add_client_req(state, id, from, index) do
+    req = %{id: id, from: from, index: index, term: state.current_term}
+    %{state | client_reqs: [req | state.client_reqs]}
   end
 end
 

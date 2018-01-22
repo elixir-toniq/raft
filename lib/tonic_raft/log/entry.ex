@@ -22,8 +22,8 @@ defmodule TonicRaft.Log.Entry do
   `:noop` - Written when a leader first comes to power so that we can move the
   commit index forward. Since we can only commit entries from our current term
   based on Raft's safety description in 5.4.2 we do this immediately in order to
-  force a commitment based on replication. The noop isn't discussed in the paper
-  but is an optimization for the real world.
+  force a commitment based on replication. The noop is only discussed briefly
+  in section 8. "Client Interaction".
   """
   @type type :: :command
               | :config
@@ -53,6 +53,15 @@ defmodule TonicRaft.Log.Entry do
       type: :config,
       term: term,
       data: configuration,
+    }
+  end
+
+  def command(term, cmd) do
+    %__MODULE__{
+      index: :none,
+      type: :command,
+      term: term,
+      data: cmd,
     }
   end
 end

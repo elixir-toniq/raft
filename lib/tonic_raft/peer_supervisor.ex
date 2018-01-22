@@ -2,7 +2,11 @@ defmodule TonicRaft.PeerSupervisor do
   use Supervisor
 
   def start_link({name, config}) do
-    Supervisor.start_link(__MODULE__, {name, config}, name: :"#{name}_sup")
+    Supervisor.start_link(__MODULE__, {name, config}, name: sup_name(name))
+  end
+
+  def sup_name(name) do
+    :"#{name}_sup"
   end
 
   def init({name, config}) do

@@ -3,17 +3,15 @@ defmodule TonicRaft.Server.State do
   alias __MODULE__
 
   defstruct [
-    # configurations: %{
-    #   latest: nil,
-    #   latest_index: 0,
-    #   servers: [],
-    # },
     me: nil,
     config: nil,
+    state_machine: nil,
+    state_machine_state: nil,
     configuration: %Configuration{},
     current_leader: :none,
     current_term: 0,
     client_reqs: [],
+    read_reqs: [],
     election_timeout: 0,
     election_timer: nil,
     leader: :none,
@@ -23,6 +21,7 @@ defmodule TonicRaft.Server.State do
     last_index: 0,
     commit_index: 0,
     log_store: nil,
+
     next_index: nil, #only used for the leader, index of the next log entry to send to a server
     match_index: nil, # for each server, index of highest log entry known to be replicated on server
     votes: 0, # Only used when in candidate mode and tallying votes
