@@ -195,7 +195,7 @@ defmodule TonicRaft.Server do
   def follower(:info, :timeout, %{configuration: config}=state) do
     case Configuration.has_vote?(state.me, config) do
       true ->
-        Logger.debug("#{state.me}: Becoming candidate")
+        Logger.warn("#{state.me}: Becoming candidate")
         new_state = become_candidate(state)
         {:next_state, :candidate, new_state}
       false ->
@@ -298,7 +298,7 @@ defmodule TonicRaft.Server do
   end
 
   def candidate(:info, :timeout, state) do
-    Logger.warn("#{state.me}: Timeout reached. Starting Election")
+    Logger.warn("#{state.me}: Timeout reached. Re-starting Election")
 
     {:next_state, :candidate, become_candidate(state)}
   end
@@ -315,6 +315,7 @@ defmodule TonicRaft.Server do
   # A peer is trying to become leader. If it has a higher term then we
   # need to step down and become a follower
   def candidate({:call, from}, %RequestVoteReq{}=req, state) do
+    Logger.warn("#{state.me}, in the middle of election. Stepping down")
     handle_vote(from, req, state)
   end
 
@@ -344,6 +345,7 @@ defmodule TonicRaft.Server do
   end
 
   def candidate(msg, event, data) do
+    Logger.debug("Unhandled candidate event: #{inspect event}, #{inspect data}")
     handle_event(msg, event, :candidate, data)
   end
 
@@ -353,7 +355,7 @@ defmodule TonicRaft.Server do
 
   def handle_event({:call, from}, :status, current_state, state) do
     status = %{
-      name: state.config.name,
+      name: state.me,
       current_state: current_state,
       leader: state.leader,
       configuration: state.configuration,
@@ -591,7 +593,10 @@ defmodule TonicRaft.Server do
     state = %{state | leader: :none}
     :ok = vote_for_myself(state)
 
+    followers = Configuration.followers(state.configuration, state.me)
+
     followers
+    |> IO.inspect(label: "Follower")
     |> Enum.map(request_vote(state))
     |> RPC.broadcast
 
@@ -615,6 +620,8 @@ defmodule TonicRaft.Server do
         %{state | init_config: :complete}
 
       _ ->
+        Logger.error("We should not be here")
+        throw "This is bad"
         state
     end
   end
@@ -692,7 +699,7 @@ defmodule TonicRaft.Server do
   end
 
   defp send_append_entries(%{followers: followers}=state) do
-    followers
+    Configuration.followers(state.configuration, state.me)
     |> Enum.map(send_entry(state))
     |> RPC.broadcast
   end
