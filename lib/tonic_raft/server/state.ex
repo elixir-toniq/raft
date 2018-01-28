@@ -1,27 +1,21 @@
 defmodule TonicRaft.Server.State do
-  alias TonicRaft.{Config, Configuration}
-  alias __MODULE__
+  alias TonicRaft.{Configuration}
 
   defstruct [
     me: nil,
     config: nil,
     state_machine: nil,
     state_machine_state: nil,
-    configuration: %Configuration{},
     current_leader: :none,
     current_term: 0,
     client_reqs: [],
     read_reqs: [],
-    election_timeout: 0,
-    election_timer: nil,
     leader: :none,
     followers: [],
     init_config: :undefined,
     timer: nil,
-    last_index: 0,
     commit_index: 0,
-    log_store: nil,
-
+    configuration: nil,
     next_index: nil, #only used for the leader, index of the next log entry to send to a server
     match_index: nil, # for each server, index of highest log entry known to be replicated on server
     votes: 0, # Only used when in candidate mode and tallying votes
@@ -38,24 +32,6 @@ defmodule TonicRaft.Server.State do
 
   def increment_term(state) do
     Map.update!(state, :current_term, & &1+1)
-  end
-
-  def reset_timeout(state, cb) do
-    if state.election_timer do
-      Process.cancel_timer(state.election_timer)
-    end
-
-    timeout = Config.election_timeout(state.config)
-    %State{state | election_timeout: timeout, election_timer: cb.(timeout)}
-  end
-
-  def next_election_timeout(state, cb) do
-    if state.election_timer do
-      Process.cancel_timer(state.election_timer)
-    end
-
-    timeout = Config.election_timeout(state.config)
-    %State{state | election_timeout: timeout, election_timer: cb.(timeout)}
   end
 
   def last_index(state) do
