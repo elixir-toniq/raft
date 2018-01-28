@@ -122,6 +122,7 @@ defmodule TonicRaft.Log do
     last_index = LogStore.last_index(log_store)
 
     state = %{
+      name: name,
       log_store: log_store,
       metadata: metadata,
       last_index: last_index,
@@ -186,6 +187,7 @@ defmodule TonicRaft.Log do
   defp init_log(state) do
     case LogStore.has_data?(state.log_store) do
       true ->
+        Logger.error("#{log_name(state.name)} has data")
         state
       false ->
         configuration = %TonicRaft.Configuration{}
@@ -198,10 +200,16 @@ defmodule TonicRaft.Log do
 
   defp append_entries(state, entries) do
     Enum.reduce entries, state, fn entry, state ->
-      entry = %{entry | index: state.last_index+1}
+      entry = add_index(entry, state.last_index)
       {:ok, last_index} = LogStore.store_entries(state.log_store, [entry])
+      Logger.debug("#{log_name(state.name)}: Stored up to #{last_index}")
       state = apply_entry(state, entry)
-      %{state | last_index: last_index}
+      %{state | last_index: entry.index}
     end
   end
+
+  defp add_index(%{index: :none}=entry, index) do
+    %{entry | index: index+1}
+  end
+  defp add_index(entry, _), do: entry
 end

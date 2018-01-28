@@ -128,7 +128,8 @@ defmodule TonicRaft.Server do
 
   # Write new entries to the log and replicate
   def leader({:call, from}, {:write, {id, cmd}}, state) do
-    Logger.info("Writing new command to log")
+    state = reset_timeout(heartbeat_timeout(), state)
+    Logger.info("#{state.me}: Writing new command to log")
 
     entry = Entry.command(state.current_term, cmd)
     {:ok, last_index} = Log.append(state.me, [entry])
@@ -569,7 +570,7 @@ defmodule TonicRaft.Server do
   end
 
   defp maybe_send_read_replies(%{configuration: conf, match_index: mi}=state) do
-    Logger.debug("Sending any eligible read requests")
+    Logger.debug("#{state.me}: Sending any eligible read requests")
 
     commit_index = Configuration.quorum_max(conf, mi)
     {elegible, remaining} = elegible_requests(state, commit_index)
@@ -611,7 +612,7 @@ defmodule TonicRaft.Server do
     commit_index = Configuration.quorum_max(state.configuration, state.match_index)
     cond do
       commit_index > state.commit_index and safe_to_commit?(commit_index, state) ->
-        Logger.debug("Committing to index #{commit_index}")
+        Logger.debug("#{state.me}: Committing to index #{commit_index}")
         commit_entries(commit_index, state)
 
       commit_index == state.commit_index ->
@@ -695,15 +696,17 @@ defmodule TonicRaft.Server do
     end
   end
 
-  defp commit_entries(leader_index, %{commit_index: commit_index}=state)
-                                   when commit_index >= leader_index, do: state
+  defp commit_entries(commit_to, %{commit_index: commit_index}=state)
+                                   when commit_index >= commit_to, do: state
 
   # Starting at the last known index and working towards the new last index
   # apply each log to the state machine
-  defp commit_entries(leader_index, %{commit_index: commit_index}=state) do
-    last_index = min(leader_index, Log.last_index(state.me))
+  defp commit_entries(commit_to, %{commit_index: starting_index}=state) do
+    # Returns the last possible index. Its either the index they want us to
+    # commit to or the largest index that we have in our log
+    last_index = min(commit_to, Log.last_index(state.me))
 
-    (commit_index+1..last_index)
+    (starting_index+1..last_index)
     |> Enum.reduce(state, &commit_entry/2)
   end
 
@@ -714,15 +717,15 @@ defmodule TonicRaft.Server do
 
       {:ok, %{type: :command, data: cmd}=log} ->
         {result, new_sms} = apply_log_to_state_machine(state, cmd)
-        respond_to_client_requests(state.client_reqs, log, {:ok, result})
-        %{state | commit_index: index, state_machine_state: new_sms}
+        reqs = respond_to_client_requests(state.client_reqs, log, {:ok, result})
+        %{state | commit_index: index, state_machine_state: new_sms, client_reqs: reqs}
 
       {:ok, %{type: :config}=log} ->
         # TODO - This is probably wrong. We actually need to update the
         # configuration with whats in the log.
         rpy = {:ok, state.configuration}
-        respond_to_client_requests(state.client_reqs, log, rpy)
-        %{state | commit_index: index}
+        reqs = respond_to_client_requests(state.client_reqs, log, rpy)
+        %{state | commit_index: index, client_reqs: reqs}
     end
   end
 
@@ -730,6 +733,8 @@ defmodule TonicRaft.Server do
     reqs
     |> Enum.filter(fn req -> req.index == log.index end)
     |> Enum.each(fn req -> respond_to_client(req, rpy) end)
+
+    Enum.reject(reqs, fn req -> req.index == log.index end)
   end
 
   defp respond_to_client(%{from: from}, rpy) do

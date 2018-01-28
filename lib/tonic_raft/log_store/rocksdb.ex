@@ -83,7 +83,7 @@ defmodule TonicRaft.LogStore.RocksDB do
   end
 
   defp put(db, key, value) when is_binary(key) and is_binary(value) do
-    :rocksdb.put(db, key, value, [])
+    :rocksdb.put(db, key, value, [sync: true])
   end
 
   def get(db, key) when is_binary(key) do

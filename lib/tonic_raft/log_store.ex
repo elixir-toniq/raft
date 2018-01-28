@@ -165,11 +165,11 @@ defmodule TonicRaft.LogStore do
   end
 
   defp encode_index(index) when is_integer(index) do
-    Integer.to_string(index)
+    << index :: size(64) >>
   end
 
   defp decode_index(index) when is_binary(index) do
-    String.to_integer(index)
+    :binary.decode_unsigned(index)
   end
 
   defp adapter, do: Application.get_env(:tonic_raft, :log_store, TonicRaft.LogStore.RocksDB)
