@@ -25,20 +25,20 @@ defmodule TonicRaft do
   manner. This operation blocks until the log has been replicated to a
   majority of servers.
   """
-  @spec write(peer(), term(), list()) :: {:ok, term()} | {:error, :timeout} | {:error, :not_leader}
+  @spec write(peer(), term(), any()) :: {:ok, term()} | {:error, :timeout} | {:error, :not_leader}
 
-  def write(leader, cmd, _opts \\ []) do
+  def write(leader, cmd, timeout \\ 3_000) do
     id = UUID.uuid4()
-    TonicRaft.Server.write(leader, {id, cmd})
+    TonicRaft.Server.write(leader, {id, cmd}, timeout)
   end
 
   @doc """
   Reads state that has been applied to the state machine.
   """
-  @spec read(peer(), list()) :: {:ok, term()} | {:error, :timeout} | {:error, :not_leader}
+  @spec read(peer(), term(), any()) :: {:ok, term()} | {:error, :timeout} | {:error, :not_leader}
 
-  def read(leader, cmd, _opts \\ []) do
-    TonicRaft.Server.read(leader, {UUID.uuid4(), cmd})
+  def read(leader, cmd, timeout \\ 3_000) do
+    TonicRaft.Server.read(leader, {UUID.uuid4(), cmd}, timeout)
   end
 
   @doc """

@@ -56,8 +56,8 @@ defmodule TonicRaft.Server do
   """
   # @spec apply(server(), term()) :: :ok | {:error, :timeout} | {:error, :not_leader}
 
-  def write(peer, cmd) do
-    GenStateMachine.call(peer, {:write, cmd})
+  def write(peer, cmd, timeout \\ 3_000) do
+    GenStateMachine.call(peer, {:write, cmd}, timeout)
   end
 
   @doc """
@@ -66,8 +66,8 @@ defmodule TonicRaft.Server do
   confirm that they have not been deposed before processing the read operation
   as described in the raft paper, section 8: Client Interaction.
   """
-  def read(peer, cmd) do
-    GenStateMachine.call(peer, {:read, cmd})
+  def read(peer, cmd, timeout \\ 3_000) do
+    GenStateMachine.call(peer, {:read, cmd}, timeout)
   end
 
   @doc """
