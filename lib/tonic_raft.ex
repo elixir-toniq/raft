@@ -57,7 +57,11 @@ defmodule TonicRaft do
   @spec status(peer()) :: %{}
 
   def status(name) do
-    TonicRaft.Server.status(name)
+    {:ok, TonicRaft.Server.status(name)}
+  catch
+    :exit, _ ->
+      IO.puts "Error getting status"
+      {:error, :no_node}
   end
 
   @doc """

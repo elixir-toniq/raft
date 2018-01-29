@@ -74,6 +74,11 @@ defmodule TonicRaft.Log do
   def get_configuration(name), do: call(name, :get_configuration)
 
   @doc """
+  Deletes all logs in the range inclusivesly
+  """
+  def delete_range(name, range), do: call(name, {:delete_range, range})
+
+  @doc """
   Returns the last entry in the log. If there are no entries then it returns an
   `:error`.
   """
@@ -130,10 +135,6 @@ defmodule TonicRaft.Log do
     }
     state = init_log(state)
 
-    # start_index         = 0 # TODO: This should be the index of the last snapshot if there is one
-    # logs                = LogStore.slice(log_store, start_index..last_index)
-    # configuration       = Configuration.restore(logs)
-
     {:ok, state}
   end
 
@@ -162,6 +163,13 @@ defmodule TonicRaft.Log do
     {:reply, config, state}
   end
 
+  def handle_call({:delete_range, range}, _from, state) do
+    :ok = LogStore.delete_range(state.log_store, range)
+    last_index = LogStore.last_index(state.log_store)
+    state = %{state | last_index: last_index}
+    {:reply, :ok, state}
+  end
+
   def handle_call(:last_entry, _from, state) do
     case LogStore.last_entry(state.log_store) do
       {:ok, :empty} ->
@@ -187,8 +195,8 @@ defmodule TonicRaft.Log do
   defp init_log(state) do
     case LogStore.has_data?(state.log_store) do
       true ->
-        Logger.error("#{log_name(state.name)} has data")
-        state
+        Logger.debug("#{log_name(state.name)} has data")
+        restore_configuration(state)
       false ->
         configuration = %TonicRaft.Configuration{}
         entry = Entry.configuration(0, configuration)
@@ -212,4 +220,11 @@ defmodule TonicRaft.Log do
     %{entry | index: index+1}
   end
   defp add_index(entry, _), do: entry
+
+  defp restore_configuration(%{log_store: log_store, last_index: index}=state) do
+    log_store
+    |> LogStore.slice(0..index)
+    |> Enum.filter(&Entry.configuration?/1)
+    |> Enum.reduce(state, fn entry, old_state -> apply_entry(old_state, entry) end)
+  end
 end

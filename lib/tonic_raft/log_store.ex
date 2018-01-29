@@ -131,12 +131,22 @@ defmodule TonicRaft.LogStore do
   end
 
   @doc """
+  Deletes a range of logs inclusively
+  """
+  def delete_range(db, range) do
+    range = Enum.map(range, &encode_index/1)
+    adapter().delete_range(db, range)
+  end
+
+  @doc """
   Gets all logs from starting index to end index inclusive.
   """
   def slice(db, range) do
     range
-    |> Enum.map(& adapter().get_log(db, &1))
+    |> Enum.map(&encode_index/1)
+    |> Enum.map(& adapter().get_entry(db, &1))
     |> Enum.map(fn {:ok, value} -> value end)
+    |> Enum.map(&decode/1)
   end
 
   @doc """
@@ -154,6 +164,22 @@ defmodule TonicRaft.LogStore do
 
   def has_data?(db) do
     last_index(db) > 0
+  end
+
+  @doc """
+  Returns metadata and all the persisted logs. This is used for debugging and
+  testing purposes only and should not be used in production.
+  """
+  def dump_data(db) do
+    %{term: term, voted_for: voted_for} = get_metadata(db)
+    last_index = last_index(db)
+    logs = slice(db, 0..last_index)
+
+    %{
+      term: term,
+      voted_for: voted_for,
+      logs: logs
+    }
   end
 
   defp decode(value) when is_binary(value) do

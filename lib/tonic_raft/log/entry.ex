@@ -44,6 +44,10 @@ defmodule TonicRaft.Log.Entry do
     data: data(),
   }
 
+  def configuration?(%{type: :config}), do: true
+  def configuration?(_), do: false
+
+
   @doc """
   Buids a configuration entry.
   """

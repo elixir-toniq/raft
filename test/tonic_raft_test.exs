@@ -101,7 +101,14 @@ defmodule TonicRaftTest do
     # Ensure that the fsms all have logs applied
   end
 
-  @tag :focus
+  test "commands sent to followers should redirect to leader" do
+    flunk "Not Implemented"
+  end
+
+  test "commands sent to candidates should error" do
+    flunk "Not Implemented"
+  end
+
   test "leader failure" do
     # Start all nodes
     {:ok, _s1} = TonicRaft.start_node(:s1, %Config{state_machine: StackTestFSM})

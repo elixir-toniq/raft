@@ -166,9 +166,11 @@ defmodule TonicRaft.Server do
   # The next time a heartbeat times out we will send them all of the entries
   # and hopefully catch them up. If they aren't then we try again.
   def leader(:cast, %AppendEntriesResp{success: false, from: from}, state) do
-    Logger.debug("#{state.me}: Follower #{from} is out of date. Decrementing index")
-
     next_index = Map.update!(state.next_index, from, & &1-1)
+    Logger.warn fn ->
+      "#{state.me}: Follower #{from} is out of date. Decrementing index to #{inspect next_index}"
+    end
+
     {:next_state, :leader, %{state | next_index: next_index}}
   end
 
@@ -279,12 +281,17 @@ defmodule TonicRaft.Server do
       end)
       {:ok, index} = Log.append(state.me, req.entries)
       configuration = Log.get_configuration(state.me)
+      # IO.inspect([req, index, state], label: "Follower adding new logs")
       state = commit_entries(req.leader_commit, state)
       state = %{state | leader: req.from, configuration: configuration}
       resp = %{resp | success: true, index: index}
+      # Log.delete_range(state.me, prev_index..last_index)
       {:next_state, :follower, state, [{:reply, from, resp}]}
     else
-      Logger.warn("#{state.me}: Log is out of date. Failing append")
+      last_term = Log.last_term(state.me)
+      Logger.warn fn ->
+        "#{state.me}: Conflict in log. ours: #{last_term}. remote: #{req.prev_log_term}"
+      end
       {:next_state, :follower, state, [{:reply, from, resp}]}
     end
   end
@@ -696,15 +703,15 @@ defmodule TonicRaft.Server do
     end
   end
 
-  defp commit_entries(commit_to, %{commit_index: commit_index}=state)
-                                   when commit_index >= commit_to, do: state
+  defp commit_entries(leader_commit, %{commit_index: commit_index}=state)
+                                   when commit_index >= leader_commit, do: state
 
   # Starting at the last known index and working towards the new last index
   # apply each log to the state machine
-  defp commit_entries(commit_to, %{commit_index: starting_index}=state) do
+  defp commit_entries(leader_commit, %{commit_index: starting_index}=state) do
     # Returns the last possible index. Its either the index they want us to
     # commit to or the largest index that we have in our log
-    last_index = min(commit_to, Log.last_index(state.me))
+    last_index = min(leader_commit, Log.last_index(state.me))
 
     (starting_index+1..last_index)
     |> Enum.reduce(state, &commit_entry/2)
