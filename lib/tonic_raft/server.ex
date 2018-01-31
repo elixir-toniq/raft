@@ -751,11 +751,8 @@ defmodule TonicRaft.Server do
   defp consistent?(%{prev_log_index: 0, prev_log_term: 0}, _), do: true
   defp consistent?(%{prev_log_index: index, prev_log_term: term}, state) do
     case Log.get_entry(state.me, index) do
-      {:ok, %{term: ^term}} ->
-        true
-
-      {:ok, %{term: _term}} ->
-        false
+      {:ok, %{term: our_term}} ->
+        term == our_term
 
       {:error, :not_found} ->
         false
