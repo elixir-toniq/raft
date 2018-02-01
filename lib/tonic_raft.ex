@@ -17,6 +17,7 @@ defmodule TonicRaft do
   Gracefully stops the node.
   """
   def stop_node(name) do
+    # Logger.error("Stopping node")
     TonicRaft.Server.Supervisor.stop_peer(name)
   end
 
@@ -28,8 +29,12 @@ defmodule TonicRaft do
   @spec write(peer(), term(), any()) :: {:ok, term()} | {:error, :timeout} | {:error, :not_leader}
 
   def write(leader, cmd, timeout \\ 3_000) do
-    id = UUID.uuid4()
-    TonicRaft.Server.write(leader, {id, cmd}, timeout)
+    TonicRaft.Server.write(leader, {UUID.uuid4(), cmd}, timeout)
+  catch
+    :exit, e ->
+      # Logger.error("Exit during write: #{inspect e}")
+      IO.puts "Timeout during write: #{inspect e}"
+      {:error, :timeout}
   end
 
   @doc """
@@ -39,6 +44,10 @@ defmodule TonicRaft do
 
   def read(leader, cmd, timeout \\ 3_000) do
     TonicRaft.Server.read(leader, {UUID.uuid4(), cmd}, timeout)
+  catch
+    :exit, e ->
+      IO.puts "Timeout during read: #{inspect e}"
+      {:error, :timeout}
   end
 
   @doc """

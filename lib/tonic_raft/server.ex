@@ -243,12 +243,7 @@ defmodule TonicRaft.Server do
 
   def follower({:call, from}, {:set_configuration, _change}, state) do
     Logger.warn("#{state.me}: Can't set config on a follower that already has a configuration")
-    {:keep_state_and_data, [{:reply, from, {:error, :not_leader}}]}
-  end
-
-  def follower({:call, from}, :write, state) do
-    Logger.warn("#{state.me}: Can't write on a server that isn't the leader")
-    {:keep_state_and_data, [{:reply, from, {:error, :not_leader}}]}
+    {:keep_state_and_data, [{:reply, from, {:error, {:redirect, state.leader}}}]}
   end
 
   # Leader has a lower term then us
@@ -300,6 +295,16 @@ defmodule TonicRaft.Server do
     handle_vote(from, req, state)
   end
 
+  def follower({:call, from}, {:write, _}, state) do
+    Logger.warn("#{state.me}: Can't write on a server that isn't the leader")
+    {:keep_state_and_data, [{:reply, from, {:error, {:redirect, state.leader}}}]}
+  end
+
+  def follower({:call, from}, {:read, _}, state) do
+    Logger.warn("#{state.me}: Can't read from a server that isn't the leader")
+    {:keep_state_and_data, [{:reply, from, {:error, {:redirect, state.leader}}}]}
+  end
+
   def follower(event, msg, state) do
     handle_event(event, msg, :follower, state)
   end
@@ -324,12 +329,7 @@ defmodule TonicRaft.Server do
   end
 
   def candidate({:call, from}, {:set_configuration, _change}, _state) do
-    {:keep_state_and_data, [{:reply, from, {:error, :not_leader}}]}
-  end
-
-  def candidate({:call, from}, :write, _state) do
-    Logger.warn("Can't write to a server that isn't the leader")
-    {:keep_state_and_data, [{:reply, from, {:error, :not_leader}}]}
+    {:keep_state_and_data, [{:reply, from, {:error, :election_in_progress}}]}
   end
 
   # A peer is trying to become leader. If it has a higher term then we
@@ -376,6 +376,16 @@ defmodule TonicRaft.Server do
   def candidate({:call, _from}, %AppendEntriesReq{}, state) do
     Logger.debug("#{state.me}: Ignoring stale append entries")
     {:keep_state_and_data, []}
+  end
+
+  def candidate({:call, from}, {:write, _}, _state) do
+    Logger.warn("Can't write to a server that isn't the leader")
+    {:keep_state_and_data, [{:reply, from, {:error, :election_in_progress}}]}
+  end
+
+  def candidate({:call, from}, {:read, _}, _state) do
+    Logger.warn("Can't from a server that isn't the leader")
+    {:keep_state_and_data, [{:reply, from, {:error, :election_in_progress}}]}
   end
 
   def candidate(msg, event, data) do

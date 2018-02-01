@@ -4,9 +4,10 @@ defmodule TonicRaft.Fuzzy.SystemTest do
   use ExUnit.Case
   require Logger
   @moduletag capture_log: true
+  @moduletag timeout: 120_000
 
   property "The system behaves correctly", [:verbose] do
-    numtests(100, forall cmds in commands(__MODULE__) do
+    numtests(20, forall cmds in commands(__MODULE__) do
       trap_exit do
         clean()
         Application.ensure_all_started(:tonic_raft)
@@ -63,14 +64,13 @@ defmodule TonicRaft.Fuzzy.SystemTest do
   end
 
   def start_nodes(nodes) do
+    # IO.puts "Starting nodes: #{inspect nodes}"
     for n <- nodes do
       start_node(n)
     end
   end
 
   def start_node(n) do
-    # IO.puts "Starting node: #{inspect n}"
-    # {:ok, _} = TonicRaft.start_node(n, default_config())
     TonicRaft.start_node(n, default_config())
   end
 
@@ -86,15 +86,16 @@ defmodule TonicRaft.Fuzzy.SystemTest do
     call(:set_configuration, [to, running])
   end
 
-  def command(%{state: :stable, old_servers: old, running: running})
-    when length(running) <= div(length(old), 2) do
+  def command(%{state: :stable, old_servers: old, running: running}) 
+      when length(running) <= div(length(old), 2) do
     to_start = oneof(old -- running)
-    call(:start_node, [to_start])
+    call_self(:start_node, [to_start])
   end
 
   def command(%{state: :stable, to: to, running: running}) do
+    # frequency([{100, call(:write, [to, command()])}])
     frequency([{100, call(:write, [to, command()])},
-               {1,   call(:stop_node, [oneof(running)])}])
+               {20,   call(:stop_node, [oneof(running)])}])
   end
 
   def servers do
@@ -116,20 +117,31 @@ defmodule TonicRaft.Fuzzy.SystemTest do
   # State Transitions
   #
 
-  def initial_state, do: %__MODULE__{}
+  def initial_state, do: %__MODULE__{state: :init}
+
+  def precondition(%{state: :init}, {:call, TonicRaft, _, _}), do: false
 
   def precondition(%{state: :init}, _), do: true
 
+  def precondition(%{state: :blank}, {:call, TonicRaft, op, _}) do
+    op == :set_configuration
+  end
+
   def precondition(%{running: []}, {:call, TonicRaft, _, _}), do: false
 
-  def precondition(%{running: running}, {:call, TonicRaft, _, [to]}) do
+  def precondition(%{running: running}, {:call, TonicRaft, :stop_node, [to]}) do
     Enum.member?(running, to)
+  end
+
+  def precondition(%{old_servers: old, running: running}, {:call, _, :start_node, [to]}) do
+    Enum.member?(old, to) && !Enum.member?(running, to)
   end
 
   def precondition(%{running: running}, {:call, TonicRaft, op, [to, _]}) do
     case op do
       :write ->
         Enum.member?(running, to)
+
       :set_configuration ->
         Enum.member?(running, to)
     end
@@ -137,6 +149,7 @@ defmodule TonicRaft.Fuzzy.SystemTest do
 
 
   def next_state(%{state: :init}=s, _, {:call, __MODULE__, :start_nodes, [nodes]}) do
+    # IO.puts "Initializing"
     leader = Enum.at(nodes, 0)
     %{s | state: :blank, running: nodes, to: leader, leader: leader}
   end
@@ -147,29 +160,44 @@ defmodule TonicRaft.Fuzzy.SystemTest do
   end
 
   # def next_state(%{state: :stable, commit_index: ci, leader: leader, last_committed_op: last_op}=s,
-  def next_state(%{state: :stable}=s, result, {:call, TonicRaft, :write, [_, op]}) do
-    %{s |
-      commit_index: call_self(:maybe_increment, [s.commit_index, result]),
-      leader: call_self(:maybe_change_leader, [s.leader, result]),
-      last_committed_op: call_self(:maybe_change_last_op, [s.last_committed_op, op, result]),
-    }
+  def next_state(%{state: :stable}=s, {:ok, _}, {:call, TonicRaft, :write, [_, op]}) do
+    %{s | commit_index: s.commit_index + 1, last_committed_op: op}
+  end
+  def next_state(%{state: :stable}=s, {:error, e}, {:call, TonicRaft, :write, [_, op]}) do
+    case e do
+      {:redirect, leader} ->
+        %{s | leader: leader}
+
+      _ ->
+        %{s | leader: :unknown}
+    end
+  end
+  def next_state(%{state: :stable}=s, res, {:call, TonicRaft, :write, [_, _]}) do
+    s
+  end
+
+  def next_state(%{state: :stable}=s, _, {:call, _, :start_node, [to]}) do
+    %{s | running: [to | s.running]}
   end
 
   def next_state(%{state: :stable, to: to, running: running}=s, _,
                  {:call, TonicRaft, :stop_node, [peer]}) do
+    # IO.puts "Stopped node: #{inspect peer} from list #{inspect running}"
+
     running = List.delete(running, peer)
 
-    case to do
-      ^peer ->
-        %{s | leader: :unknown, running: running, to: Enum.at(running, 0)}
+    state =
+      cond do
+        to == peer ->
+          %{s | leader: :unknown, running: running, to: Enum.at(running, 0)}
 
-      _ ->
-        %{s | running: running}
-    end
+        true ->
+          %{s | running: running}
+      end
+
+    # IO.puts "New state #{inspect state}"
+    state
   end
-
-  # Figure out how to add an invariant here that ensures the indexes are monotonic
-  # and that comitted entries always exist in the log
 
   def postcondition(%{state: :init}, {:call, __MODULE__, :start_nodes, _}, _) do
     true
@@ -179,22 +207,30 @@ defmodule TonicRaft.Fuzzy.SystemTest do
     true
   end
 
-  def postcondition(%{state: :stable, old_servers: old, to: to}, {:call, TonicRaft, :write, [to, _]}, 
+  def postcondition(%{state: :stable, old_servers: old, to: to}=s, 
+                    {:call, TonicRaft, :write, [to, _]},
                     {:ok, _}) do
-    Enum.member?(old, to)
+    {_, server_state} = :sys.get_state(to)
+    Enum.member?(old, to) && commit_indexes_are_monotonic(s.commit_index, server_state)
   end
 
-  def postcondition(%{state: :stable, to: to}, {:call, TonicRaft, :write, [to, _]},
+  def postcondition(%{state: :stable, to: to}=s, {:call, TonicRaft, :write, [to, _]},
                     {:error, {:redirect, leader}}) do
-    leader != to
+    leader != to # && invariant(s)
   end
 
-  def postcondition(%{state: :stabel, to: to}, {:call, TonicRaft, :write, [to, ]},
+  def postcondition(%{state: :stable, to: to}=s, {:call, TonicRaft, :write, [to, ]},
                     {:error, :election_in_progress}) do
+    # invariant(s)
     true
   end
 
-  def postcondition(%{state: :stable}, {:call, TonicRaft, :stop_node, [_node]}, :ok) do
+  def postcondition(%{state: :stable}=s, {:call, TonicRaft, :stop_node, [_node]}, :ok) do
+    # invariant(s)
+    true
+  end
+
+  def postcondition(%{state: :stable}, {:call, _, :start_node, [peer]}, {:ok, _}) do
     true
   end
 
@@ -203,14 +239,21 @@ defmodule TonicRaft.Fuzzy.SystemTest do
   # Helper Functions
   #
 
-  def maybe_increment(ci, {:ok, _}), do: ci + 1
-  def maybe_increment(ci, {:error, _}), do: ci
+  # def maybe_increment(ci, {:ok, _}), do: ci + 1
+  # def maybe_increment(ci, {:error, _}), do: ci
   def maybe_increment(ci, result) do
-    IO.puts "I got an increment with some nonsense: #{inspect result}"
+    # IO.puts "I got an increment with some nonsense: #{inspect result}"
+    case result do
+      {:ok, _} -> ci + 1
+      {:error, _} -> ci
+    end
   end
 
   def maybe_change_leader(leader, {:ok, _}), do: leader
-  def maybe_change_leader(_, {:error, {:redirect, leader}}), do: leader
+  def maybe_change_leader(_, {:error, {:redirect, leader}}) do
+    # IO.puts "Changed leader to: #{inspect leader}"
+    leader
+  end
   def maybe_change_leader(_, {:error, _}), do: :unknown
 
   def maybe_change_last_op(_, op, {:ok, _}), do: op
@@ -228,9 +271,22 @@ defmodule TonicRaft.Fuzzy.SystemTest do
   # Invariants
   #
 
-  def commit_indexes_are_monotonic(%{commit_index: ci}, state) do
-    state.commit_index <= ci
+  def invariant(%{to: to}=model_state) do
+    {_, server_state} = :sys.get_state(to)
+    commit_indexes_are_monotonic(model_state, server_state)
+    # committed_entry_exists_in_log(model_state, to)
   end
+
+  def commit_indexes_are_monotonic(ci, state) do
+    # IO.puts "Model State: #{ci+1}"
+    # IO.puts "State: #{inspect state.commit_index}"
+    state.commit_index <= ci+1
+  end
+  # def commit_indexes_are_monotonic(%{commit_index: ci}, state) do
+  #   IO.puts "Model State: #{ci}"
+  #   IO.puts "State: #{inspect state}"
+  #   state.commit_index <= ci
+  # end
 
   def committed_entry_exists_in_log(%{commit_index: 0}, _) do
     true
