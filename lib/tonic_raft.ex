@@ -1,5 +1,10 @@
 defmodule TonicRaft do
-  alias TonicRaft.{Server, Config, Configuration}
+  alias TonicRaft.{
+    Log,
+    Server,
+    Config,
+    Configuration
+  }
   require Logger
 
   @type peer :: atom() | {atom(), atom()}
@@ -30,11 +35,11 @@ defmodule TonicRaft do
 
   def write(leader, cmd, timeout \\ 3_000) do
     TonicRaft.Server.write(leader, {UUID.uuid4(), cmd}, timeout)
-  catch
-    :exit, e ->
-      # Logger.error("Exit during write: #{inspect e}")
-      IO.puts "Timeout during write: #{inspect e}"
-      {:error, :timeout}
+  # catch
+  #   :exit, e ->
+  #     # Logger.error("Exit during write: #{inspect e}")
+  #     IO.puts "Timeout during write: #{inspect e}"
+  #     {:error, :timeout}
   end
 
   @doc """
@@ -44,10 +49,10 @@ defmodule TonicRaft do
 
   def read(leader, cmd, timeout \\ 3_000) do
     TonicRaft.Server.read(leader, {UUID.uuid4(), cmd}, timeout)
-  catch
-    :exit, e ->
-      IO.puts "Timeout during read: #{inspect e}"
-      {:error, :timeout}
+  # catch
+  #   :exit, e ->
+  #     IO.puts "Timeout during read: #{inspect e}"
+  #     {:error, :timeout}
   end
 
   @doc """
@@ -83,6 +88,14 @@ defmodule TonicRaft do
   def set_configuration(peer, configuration) do
     id = UUID.uuid4()
     Server.set_configuration(peer, {id, configuration})
+  end
+
+  @doc """
+  Gets an entry from the log. This should only be used for testing purposes.
+  """
+  @spec get_entry(peer(), non_neg_integer()) :: {:ok, Log.Entry.t} | {:error, term()}
+  def get_entry(to, index) do
+    Log.get_entry(to, index)
   end
 
   @doc """

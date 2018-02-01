@@ -7,7 +7,7 @@ defmodule TonicRaft.Fuzzy.SystemTest do
   @moduletag timeout: 120_000
 
   property "The system behaves correctly", [:verbose] do
-    numtests(20, forall cmds in commands(__MODULE__) do
+    numtests(20, forall cmds in more_commands(10, commands(__MODULE__)) do
       trap_exit do
         clean()
         Application.ensure_all_started(:tonic_raft)
@@ -95,7 +95,7 @@ defmodule TonicRaft.Fuzzy.SystemTest do
   def command(%{state: :stable, to: to, running: running}) do
     # frequency([{100, call(:write, [to, command()])}])
     frequency([{100, call(:write, [to, command()])},
-               {20,   call(:stop_node, [oneof(running)])}])
+               {30,   call(:stop_node, [oneof(running)])}])
   end
 
   def servers do
@@ -163,7 +163,7 @@ defmodule TonicRaft.Fuzzy.SystemTest do
   def next_state(%{state: :stable}=s, {:ok, _}, {:call, TonicRaft, :write, [_, op]}) do
     %{s | commit_index: s.commit_index + 1, last_committed_op: op}
   end
-  def next_state(%{state: :stable}=s, {:error, e}, {:call, TonicRaft, :write, [_, op]}) do
+  def next_state(%{state: :stable}=s, {:error, e}, {:call, TonicRaft, :write, [_, _op]}) do
     case e do
       {:redirect, leader} ->
         %{s | leader: leader}
@@ -211,27 +211,29 @@ defmodule TonicRaft.Fuzzy.SystemTest do
                     {:call, TonicRaft, :write, [to, _]},
                     {:ok, _}) do
     {_, server_state} = :sys.get_state(to)
-    Enum.member?(old, to) && commit_indexes_are_monotonic(s.commit_index, server_state)
+    Enum.member?(old, to) &&
+    commit_indexes_are_monotonic(s.commit_index, server_state) &&
+    committed_entry_exists_in_log(s, to)
   end
 
   def postcondition(%{state: :stable, to: to}=s, {:call, TonicRaft, :write, [to, _]},
                     {:error, {:redirect, leader}}) do
-    leader != to # && invariant(s)
+    leader != to && committed_entry_exists_in_log(s, to)
   end
 
   def postcondition(%{state: :stable, to: to}=s, {:call, TonicRaft, :write, [to, ]},
                     {:error, :election_in_progress}) do
     # invariant(s)
-    true
+    true && committed_entry_exists_in_log(s, to)
   end
 
   def postcondition(%{state: :stable}=s, {:call, TonicRaft, :stop_node, [_node]}, :ok) do
     # invariant(s)
-    true
+    true && committed_entry_exists_in_log(s, s.to)
   end
 
-  def postcondition(%{state: :stable}, {:call, _, :start_node, [peer]}, {:ok, _}) do
-    true
+  def postcondition(%{state: :stable}=s, {:call, _, :start_node, [peer]}, {:ok, _}) do
+    true && committed_entry_exists_in_log(s, s.to)
   end
 
 
