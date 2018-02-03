@@ -7,7 +7,7 @@ defmodule TonicRaft.Fuzzy.SystemTest do
   @moduletag timeout: 120_000
 
   property "The system behaves correctly", [:verbose] do
-    numtests(20, forall cmds in more_commands(10, commands(__MODULE__)) do
+    numtests(50, forall cmds in more_commands(40, commands(__MODULE__)) do
       trap_exit do
         clean()
         Application.ensure_all_started(:tonic_raft)
@@ -155,11 +155,13 @@ defmodule TonicRaft.Fuzzy.SystemTest do
     %{s | commit_index: 1, state: :stable, old_servers: running}
   end
 
-  def next_state(%{state: :stable}=s, {:ok, _}, {:call, TonicRaft, :write, [to, op]}) do
+  def next_state(%{state: :stable}=s, {:ok, _}, {:call, TonicRaft, :write, [_, op]}) do
     %{s | commit_index: s.commit_index + 1, last_committed_op: op}
   end
   def next_state(%{state: :stable}=s, {:error, e}, {:call, TonicRaft, :write, [_, _op]}) do
     case e do
+      {:redirect, :none} ->
+        s
       {:redirect, leader} ->
         %{s | to: leader}
 
@@ -167,7 +169,7 @@ defmodule TonicRaft.Fuzzy.SystemTest do
         %{s | to: :unknown}
     end
   end
-  def next_state(%{state: :stable}=s, res, {:call, TonicRaft, :write, [_, _]}) do
+  def next_state(%{state: :stable}=s, _, {:call, TonicRaft, :write, [_, _]}) do
     s
   end
 
@@ -207,7 +209,12 @@ defmodule TonicRaft.Fuzzy.SystemTest do
   def postcondition(%{state: :stable}=s,
                     {:call, TonicRaft, :write, [to, _]},
                     {:error, {:redirect, leader}}) do
-    Enum.member?(s.old_servers, leader) && leader != to
+    case leader do
+      :none ->
+        true
+      _ ->
+        Enum.member?(s.old_servers, leader) && leader != to
+    end
   end
 
   def postcondition(%{state: :stable, to: to}=s,
@@ -230,7 +237,7 @@ defmodule TonicRaft.Fuzzy.SystemTest do
     end
   end
 
-  def postcondition(%{state: :stable}=s, {:call, _, :start_node, [peer]}, {:ok, _}) do
+  def postcondition(%{state: :stable}, {:call, _, :start_node, [_peer]}, {:ok, _}) do
     true
     # committed_entry_exists_in_log(s, peer)
   end

@@ -44,7 +44,6 @@ defmodule TonicRaft.Support.Applier do
   def handle_info(:send_more, state) do
     timer = Process.send_after(self(), :send_more, 200)
     leader = Cluster.wait_for_election(state.cluster)
-    IO.inspect(leader, label: "I got a leader")
     state = apply_commands(state.cluster, leader, state)
     {:noreply, %{state | timer: timer}}
   end
@@ -63,11 +62,11 @@ defmodule TonicRaft.Support.Applier do
         state = %{state | errors: [{command, :timeout} | state.errors]}
         leader = Cluster.wait_for_election(cluster)
         apply_command(cluster, leader, command, state)
-      {:error, :not_leader} ->
-        state = %{state | errors: [{command, :not_leader} | state.errors]}
-        leader = Cluster.wait_for_election(cluster)
+      {:error, :election_in_progress} ->
+        raise "I don't know what to do here"
+      {:error, {:redirect, leader}} ->
+        state = %{state | errors: [{command, {:redirect, leader}} | state.errors]}
         apply_command(cluster, leader, command, state)
-
     end
     catch
       :exit, _ ->

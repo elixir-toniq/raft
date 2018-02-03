@@ -76,7 +76,12 @@ defmodule TonicRaft.Log do
   @doc """
   Deletes all logs in the range inclusivesly
   """
-  def delete_range(name, range), do: call(name, {:delete_range, range})
+  def delete_range(name, a, b) when a <= b do
+    call(name, {:delete_range, a, b})
+  end
+  def delete_range(name, _, _) do
+    :ok
+  end
 
   @doc """
   Returns the last entry in the log. If there are no entries then it returns an
@@ -163,8 +168,8 @@ defmodule TonicRaft.Log do
     {:reply, config, state}
   end
 
-  def handle_call({:delete_range, range}, _from, state) do
-    :ok = LogStore.delete_range(state.log_store, range)
+  def handle_call({:delete_range, a, b}, _from, state) do
+    :ok = LogStore.delete_range(state.log_store, a..b)
     last_index = LogStore.last_index(state.log_store)
     state = %{state | last_index: last_index}
     {:reply, :ok, state}

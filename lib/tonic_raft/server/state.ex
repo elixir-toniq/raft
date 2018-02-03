@@ -6,7 +6,6 @@ defmodule TonicRaft.Server.State do
     config: nil,
     state_machine: nil,
     state_machine_state: nil,
-    current_leader: :none,
     current_term: 0,
     client_reqs: [],
     read_reqs: [],
