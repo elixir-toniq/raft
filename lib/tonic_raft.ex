@@ -96,6 +96,9 @@ defmodule TonicRaft do
   @spec get_entry(peer(), non_neg_integer()) :: {:ok, Log.Entry.t} | {:error, term()}
   def get_entry(to, index) do
     Log.get_entry(to, index)
+  catch
+    :exit, {:noproc, _} ->
+      {:error, :no_node}
   end
 
   @doc """

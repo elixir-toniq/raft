@@ -1,6 +1,6 @@
 defmodule TonicRaft.Config do
   defstruct [
-    state_machine: :none,
+    state_machine: TonicRaft.StateMachine.Echo,
     name: :none,
     min_election_timeout: 300,
     max_election_timeout: 1_000,

@@ -42,7 +42,6 @@ defmodule TonicRaft.Fuzzy.SystemTest do
     new_servers: [],
     commit_index: 0,
     last_committed_op: nil,
-    leader: nil,
     to: nil,
   ]
 
@@ -58,13 +57,10 @@ defmodule TonicRaft.Fuzzy.SystemTest do
   end
 
   def default_config do
-    %TonicRaft.Config{
-      state_machine: TonicRaft.Support.EchoFSM,
-    }
+    %TonicRaft.Config{}
   end
 
   def start_nodes(nodes) do
-    # IO.puts "Starting nodes: #{inspect nodes}"
     for n <- nodes do
       start_node(n)
     end
@@ -93,9 +89,8 @@ defmodule TonicRaft.Fuzzy.SystemTest do
   end
 
   def command(%{state: :stable, to: to, running: running}) do
-    # frequency([{100, call(:write, [to, command()])}])
     frequency([{100, call(:write, [to, command()])},
-               {30,   call(:stop_node, [oneof(running)])}])
+               {20,   call(:stop_node, [oneof(running)])}])
   end
 
   def servers do
@@ -120,6 +115,8 @@ defmodule TonicRaft.Fuzzy.SystemTest do
   def initial_state, do: %__MODULE__{state: :init}
 
   def precondition(%{state: :init}, {:call, TonicRaft, _, _}), do: false
+
+  def precondition(%{state: :init, old_servers: []}, {:call, _, :start_node, _}), do: false
 
   def precondition(%{state: :init}, _), do: true
 
@@ -149,9 +146,8 @@ defmodule TonicRaft.Fuzzy.SystemTest do
 
 
   def next_state(%{state: :init}=s, _, {:call, __MODULE__, :start_nodes, [nodes]}) do
-    # IO.puts "Initializing"
     leader = Enum.at(nodes, 0)
-    %{s | state: :blank, running: nodes, to: leader, leader: leader}
+    %{s | state: :blank, running: nodes, to: leader}
   end
 
   def next_state(%{state: :blank, to: to, running: running}=s, _,
@@ -159,17 +155,16 @@ defmodule TonicRaft.Fuzzy.SystemTest do
     %{s | commit_index: 1, state: :stable, old_servers: running}
   end
 
-  # def next_state(%{state: :stable, commit_index: ci, leader: leader, last_committed_op: last_op}=s,
-  def next_state(%{state: :stable}=s, {:ok, _}, {:call, TonicRaft, :write, [_, op]}) do
+  def next_state(%{state: :stable}=s, {:ok, _}, {:call, TonicRaft, :write, [to, op]}) do
     %{s | commit_index: s.commit_index + 1, last_committed_op: op}
   end
   def next_state(%{state: :stable}=s, {:error, e}, {:call, TonicRaft, :write, [_, _op]}) do
     case e do
       {:redirect, leader} ->
-        %{s | leader: leader}
+        %{s | to: leader}
 
-      _ ->
-        %{s | leader: :unknown}
+      :election_in_progress ->
+        %{s | to: :unknown}
     end
   end
   def next_state(%{state: :stable}=s, res, {:call, TonicRaft, :write, [_, _]}) do
@@ -182,21 +177,14 @@ defmodule TonicRaft.Fuzzy.SystemTest do
 
   def next_state(%{state: :stable, to: to, running: running}=s, _,
                  {:call, TonicRaft, :stop_node, [peer]}) do
-    # IO.puts "Stopped node: #{inspect peer} from list #{inspect running}"
-
     running = List.delete(running, peer)
+    cond do
+      to == peer ->
+        %{s | running: running, to: Enum.at(running, 0)}
 
-    state =
-      cond do
-        to == peer ->
-          %{s | leader: :unknown, running: running, to: Enum.at(running, 0)}
-
-        true ->
-          %{s | running: running}
-      end
-
-    # IO.puts "New state #{inspect state}"
-    state
+      true ->
+        %{s | running: running}
+    end
   end
 
   def postcondition(%{state: :init}, {:call, __MODULE__, :start_nodes, _}, _) do
@@ -207,33 +195,44 @@ defmodule TonicRaft.Fuzzy.SystemTest do
     true
   end
 
-  def postcondition(%{state: :stable, old_servers: old, to: to}=s, 
+  def postcondition(%{state: :stable, old_servers: old, to: to}=s,
                     {:call, TonicRaft, :write, [to, _]},
-                    {:ok, _}) do
+                    {:ok, op}) do
     {_, server_state} = :sys.get_state(to)
     Enum.member?(old, to) &&
     commit_indexes_are_monotonic(s.commit_index, server_state) &&
-    committed_entry_exists_in_log(s, to)
+    committed_entry_exists_in_log(to, s.commit_index+1, op)
   end
 
-  def postcondition(%{state: :stable, to: to}=s, {:call, TonicRaft, :write, [to, _]},
+  def postcondition(%{state: :stable}=s,
+                    {:call, TonicRaft, :write, [to, _]},
                     {:error, {:redirect, leader}}) do
-    leader != to && committed_entry_exists_in_log(s, to)
+    Enum.member?(s.old_servers, leader) && leader != to
   end
 
-  def postcondition(%{state: :stable, to: to}=s, {:call, TonicRaft, :write, [to, ]},
+  def postcondition(%{state: :stable, to: to}=s,
+                    {:call, TonicRaft, :write, [to, _]},
                     {:error, :election_in_progress}) do
-    # invariant(s)
-    true && committed_entry_exists_in_log(s, to)
+    committed_entry_exists_in_log(s, to)
+    true
   end
 
-  def postcondition(%{state: :stable}=s, {:call, TonicRaft, :stop_node, [_node]}, :ok) do
-    # invariant(s)
-    true && committed_entry_exists_in_log(s, s.to)
+  def postcondition(%{state: :stable}=s, {:call, TonicRaft, :stop_node, [peer]}, :ok) do
+    cond do
+      peer == s.to ->
+        true
+      s.to == :unknown ->
+        true
+      !Enum.member?(s.running, s.to) && Enum.member?(s.old_servers, s.to) ->
+        true
+      true ->
+        committed_entry_exists_in_log(s.to, s.commit_index, s.last_committed_op)
+    end
   end
 
   def postcondition(%{state: :stable}=s, {:call, _, :start_node, [peer]}, {:ok, _}) do
-    true && committed_entry_exists_in_log(s, s.to)
+    true
+    # committed_entry_exists_in_log(s, peer)
   end
 
 
@@ -241,10 +240,7 @@ defmodule TonicRaft.Fuzzy.SystemTest do
   # Helper Functions
   #
 
-  # def maybe_increment(ci, {:ok, _}), do: ci + 1
-  # def maybe_increment(ci, {:error, _}), do: ci
   def maybe_increment(ci, result) do
-    # IO.puts "I got an increment with some nonsense: #{inspect result}"
     case result do
       {:ok, _} -> ci + 1
       {:error, _} -> ci
@@ -253,7 +249,6 @@ defmodule TonicRaft.Fuzzy.SystemTest do
 
   def maybe_change_leader(leader, {:ok, _}), do: leader
   def maybe_change_leader(_, {:error, {:redirect, leader}}) do
-    # IO.puts "Changed leader to: #{inspect leader}"
     leader
   end
   def maybe_change_leader(_, {:error, _}), do: :unknown
@@ -273,28 +268,26 @@ defmodule TonicRaft.Fuzzy.SystemTest do
   # Invariants
   #
 
-  def invariant(%{to: to}=model_state) do
-    {_, server_state} = :sys.get_state(to)
-    commit_indexes_are_monotonic(model_state, server_state)
-    # committed_entry_exists_in_log(model_state, to)
-  end
-
   def commit_indexes_are_monotonic(ci, state) do
-    # IO.puts "Model State: #{ci+1}"
-    # IO.puts "State: #{inspect state.commit_index}"
     state.commit_index <= ci+1
   end
-  # def commit_indexes_are_monotonic(%{commit_index: ci}, state) do
-  #   IO.puts "Model State: #{ci}"
-  #   IO.puts "State: #{inspect state}"
-  #   state.commit_index <= ci
-  # end
 
+  def committed_entry_exists_in_log(peer, index, op) do
+    {:ok, %{type: type, data: cmd, index: commit_index}} = TonicRaft.get_entry(peer, index)
+
+    case type do
+      :config ->
+        true
+
+      :command ->
+        commit_index == index && cmd == op
+    end
+  end
   def committed_entry_exists_in_log(%{commit_index: 0}, _) do
     true
   end
 
-  def committed_entry_exists_in_log(%{leader: :unknown}, _) do
+  def committed_entry_exists_in_log(%{to: :unknown}, _) do
     true
   end
 
