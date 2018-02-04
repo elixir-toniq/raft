@@ -1,8 +1,8 @@
-defmodule TonicRaft.Fuzzy.PartitionsTest do
+defmodule Raft.Fuzzy.PartitionsTest do
   use ExUnit.Case, async: false
   import StreamData
 
-  alias TonicRaft.Support.{
+  alias Raft.Support.{
     Applier,
     Cluster,
   }

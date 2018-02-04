@@ -1,4 +1,4 @@
-defmodule TonicRaft.Log.Entry do
+defmodule Raft.Log.Entry do
   defstruct [:index, :term, :type, :data]
 
   @typedoc """

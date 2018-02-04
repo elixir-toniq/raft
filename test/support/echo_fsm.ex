@@ -1,5 +1,5 @@
-defmodule TonicRaft.Support.EchoFSM do
-  @behaviour TonicRaft.StateMachine
+defmodule Raft.Support.EchoFSM do
+  @behaviour Raft.StateMachine
 
   def init(_) do
     :ok

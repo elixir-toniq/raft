@@ -1,6 +1,6 @@
-defmodule TonicRaft.Config do
+defmodule Raft.Config do
   defstruct [
-    state_machine: TonicRaft.StateMachine.Echo,
+    state_machine: Raft.StateMachine.Echo,
     min_election_timeout: 300,
     max_election_timeout: 1_000,
     heartbeat_timeout: 25,

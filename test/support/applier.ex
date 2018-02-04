@@ -1,7 +1,7 @@
-defmodule TonicRaft.Support.Applier do
+defmodule Raft.Support.Applier do
   use GenServer
 
-  alias TonicRaft.Support.Cluster
+  alias Raft.Support.Cluster
 
   def start_link({cluster, generator}) do
     GenServer.start_link(__MODULE__, {cluster, generator})
@@ -55,7 +55,7 @@ defmodule TonicRaft.Support.Applier do
   end
 
   defp apply_command(cluster, leader, command, state) do
-    case TonicRaft.write(leader, command, 3_000) do
+    case Raft.write(leader, command, 3_000) do
       {:ok, value} ->
         %{state | writes: [{command, value} | state.writes]}
       {:error, :timeout} ->

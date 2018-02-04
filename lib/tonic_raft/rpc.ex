@@ -1,5 +1,5 @@
-defmodule TonicRaft.RPC do
-  alias TonicRaft.Configuration.Server
+defmodule Raft.RPC do
+  alias Raft.Configuration.Server
 
   require Logger
 

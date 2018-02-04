@@ -1,4 +1,4 @@
-defmodule TonicRaft.Mixfile do
+defmodule Raft.Mixfile do
   use Mix.Project
 
   def project do
@@ -9,7 +9,7 @@ defmodule TonicRaft.Mixfile do
       elixirc_paths: elixirc_paths(Mix.env),
       start_permanent: Mix.env == :prod,
       deps: deps(),
-      name: "TonicRaft",
+      name: "Raft",
       description: description(),
       dialyzer: [
         plt_add_deps: :transitive,
@@ -21,7 +21,7 @@ defmodule TonicRaft.Mixfile do
   def application do
     [
       extra_applications: [:logger],
-      mod: {TonicRaft.Application, []}
+      mod: {Raft.Application, []}
     ]
   end
 

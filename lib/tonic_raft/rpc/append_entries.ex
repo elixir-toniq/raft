@@ -1,4 +1,4 @@
-defmodule TonicRaft.RPC.AppendEntries do
+defmodule Raft.RPC.AppendEntries do
   @enforce_keys [:term, :leader_id, :prev_log_index, :prev_log_term, :entries, :leader_commit]
   defstruct [
     :term,

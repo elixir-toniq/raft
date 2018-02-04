@@ -1,4 +1,4 @@
-defmodule TonicRaft.Configuration do
+defmodule Raft.Configuration do
   defstruct [state: :none, old_servers: [], new_servers: [], index: 0]
 
   alias __MODULE__

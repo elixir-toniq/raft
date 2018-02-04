@@ -1,5 +1,5 @@
-defmodule TonicRaft.LogStore.RocksDB do
-  @behaviour TonicRaft.LogStore
+defmodule Raft.LogStore.RocksDB do
+  @behaviour Raft.LogStore
 
   @db_logs "logs.tonic"
   @db_conf "conf.tonic"

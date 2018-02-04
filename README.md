@@ -1,4 +1,4 @@
-# TonicRaft
+# Raft
 
 **TODO: Add description**
 

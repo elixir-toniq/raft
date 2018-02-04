@@ -1,7 +1,7 @@
-defmodule TonicRaft.Server do
+defmodule Raft.Server do
   use GenStateMachine, callback_mode: :state_functions
 
-  alias TonicRaft.{
+  alias Raft.{
     Log,
     Log.Entry,
     Config,
@@ -40,7 +40,7 @@ defmodule TonicRaft.Server do
   @doc """
   Starts a new server.
   """
-  @spec start_link({TonicRaft.peer(), Config.t}) :: {:ok, pid} | {:error, term()}
+  @spec start_link({Raft.peer(), Config.t}) :: {:ok, pid} | {:error, term()}
 
   def start_link({name, config}) do
     GenStateMachine.start_link(__MODULE__, {:follower, name, config}, [name: name])

@@ -1,5 +1,5 @@
-defmodule TonicRaft.Support.StackFSM do
-  @behaviour TonicRaft.StateMachine
+defmodule Raft.Support.StackFSM do
+  @behaviour Raft.StateMachine
 
   def init(_) do
     []
