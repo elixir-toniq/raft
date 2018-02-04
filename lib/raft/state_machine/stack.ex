@@ -1,4 +1,4 @@
-defmodule Raft.Support.StackFSM do
+defmodule Raft.StateMachine.Stack do
   @behaviour Raft.StateMachine
 
   def init(_) do
@@ -13,16 +13,16 @@ defmodule Raft.Support.StackFSM do
     {stack, stack}
   end
 
-  def handle_write({:enqueue, item}, stack) do
+  def handle_write({:put, item}, stack) do
     new_stack = [item | stack]
     {Enum.count(new_stack), new_stack}
   end
 
-  def handle_write(:dequeue, [item | stack]) do
+  def handle_write(:pop, [item | stack]) do
     {item, stack}
   end
 
-  def handle_write(:dequeue, []) do
+  def handle_write(:pop, []) do
     {:empty, []}
   end
 end
