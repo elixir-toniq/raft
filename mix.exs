@@ -44,7 +44,6 @@ defmodule Raft.Mixfile do
     {:uuid, "~> 1.1"},
     {:dialyxir, "~> 0.5", only: :dev, runtime: false},
     {:stream_data, "~> 0.4", only: [:dev, :test]},
-    {:propcheck, "~> 1.0", only: [:test]},
     {:ex_doc, "~> 0.16", only: :dev},
   ]
 
