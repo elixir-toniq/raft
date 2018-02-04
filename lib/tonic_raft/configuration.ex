@@ -1,5 +1,4 @@
 defmodule TonicRaft.Configuration do
-  @derive Jason.Encoder
   defstruct [state: :none, old_servers: [], new_servers: [], index: 0]
 
   alias __MODULE__
@@ -24,7 +23,6 @@ defmodule TonicRaft.Configuration do
       suffrage: :voter | :staging,
     }
 
-    @derive Jason.Encoder
     defstruct [suffrage: :staging, name: :none, address: nil]
 
     def to_struct(server), do: %__MODULE__{
@@ -132,18 +130,6 @@ defmodule TonicRaft.Configuration do
       |> Enum.find(fn {_, votes} -> votes >= quorum(configuration) end)
 
     value
-  end
-
-  def encode(configuration) do
-    configuration
-    |> Jason.encode!
-    |> Msgpax.pack!(iodata: false)
-  end
-
-  def decode(configuration) do
-    configuration
-    |> Msgpax.unpack!
-    |> Jason.decode!([keys: :atoms])
   end
 
   defp to_struct(configuration) do
