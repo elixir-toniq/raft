@@ -12,17 +12,16 @@ defmodule TonicRaft do
   @doc """
   Starts a new peer with a given Config.t.
   """
-  @spec start_node(peer(), Config.t) :: {:ok, term()} | {:error, term()}
+  @spec start_node(peer(), Config.t) :: {:ok, pid()} | {:error, term()}
 
-  def start_node(name, opts) do
-    TonicRaft.Server.Supervisor.start_peer(name, opts)
+  def start_node(name, config) do
+    TonicRaft.Server.Supervisor.start_peer(name, config)
   end
 
   @doc """
   Gracefully stops the node.
   """
   def stop_node(name) do
-    # Logger.error("Stopping node")
     TonicRaft.Server.Supervisor.stop_peer(name)
   end
 
@@ -35,11 +34,6 @@ defmodule TonicRaft do
 
   def write(leader, cmd, timeout \\ 3_000) do
     TonicRaft.Server.write(leader, {UUID.uuid4(), cmd}, timeout)
-  # catch
-  #   :exit, e ->
-  #     # Logger.error("Exit during write: #{inspect e}")
-  #     IO.puts "Timeout during write: #{inspect e}"
-  #     {:error, :timeout}
   end
 
   @doc """
@@ -49,10 +43,6 @@ defmodule TonicRaft do
 
   def read(leader, cmd, timeout \\ 3_000) do
     TonicRaft.Server.read(leader, {UUID.uuid4(), cmd}, timeout)
-  # catch
-  #   :exit, e ->
-  #     IO.puts "Timeout during read: #{inspect e}"
-  #     {:error, :timeout}
   end
 
   @doc """
@@ -68,12 +58,12 @@ defmodule TonicRaft do
   Returns the current status for a peer. This is used for debugging and
   testing purposes only.
   """
-  @spec status(peer()) :: %{}
+  @spec status(peer()) :: {:ok, %{}} | {:error, :no_node}
 
   def status(name) do
     {:ok, TonicRaft.Server.status(name)}
   catch
-    :exit, _ ->
+    :exit, {:noproc, _} ->
       {:error, :no_node}
   end
 
@@ -113,14 +103,14 @@ defmodule TonicRaft do
     File.rm_rf!(path)
     File.mkdir(path)
 
-    {:ok, s1} = TonicRaft.start_node(:s1, %Config{data_dir: path})
-    {:ok, s2} = TonicRaft.start_node(:s2, %Config{data_dir: path})
-    {:ok, s3} = TonicRaft.start_node(:s3, %Config{data_dir: path})
+    {:ok, _s1} = TonicRaft.start_node(:s1, %Config{data_dir: path})
+    {:ok, _s2} = TonicRaft.start_node(:s2, %Config{data_dir: path})
+    {:ok, _s3} = TonicRaft.start_node(:s3, %Config{data_dir: path})
 
     nodes = [:s1, :s2, :s3]
     {:ok, _configuration} = TonicRaft.set_configuration(:s1, nodes)
 
-    {s1, s2, s3}
+    {:s1, :s2, :s3}
   end
 end
 

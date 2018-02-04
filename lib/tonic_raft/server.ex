@@ -40,7 +40,7 @@ defmodule TonicRaft.Server do
   @doc """
   Starts a new server.
   """
-  @spec start_link({atom(), Config.t}) :: {:ok, pid} | {:error, term()}
+  @spec start_link({TonicRaft.peer(), Config.t}) :: {:ok, pid} | {:error, term()}
 
   def start_link({name, config}) do
     GenStateMachine.start_link(__MODULE__, {:follower, name, config}, [name: name])
@@ -118,7 +118,7 @@ defmodule TonicRaft.Server do
       configuration: configuration,
     }
 
-    Logger.info("#{state.me}: State has been restored", [server: config.name])
+    Logger.info("#{state.me}: State has been restored", [server: name])
     {:ok, :follower, reset_timeout(state)}
   end
 
@@ -206,7 +206,9 @@ defmodule TonicRaft.Server do
   def follower(:info, :timeout, %{configuration: config}=state) do
     case Configuration.has_vote?(state.me, config) do
       true ->
-        Logger.warn("#{state.me}: Becoming candidate")
+        Logger.warn fn ->
+          "#{state.me}: Becoming candidate of term: #{state.current_term+1}"
+        end
         new_state = become_candidate(state)
         {:next_state, :candidate, new_state}
       false ->
@@ -342,9 +344,12 @@ defmodule TonicRaft.Server do
   def candidate({:call, from}, %RequestVoteReq{}=req, state) do
     cond do
       req.term > state.current_term ->
-        Logger.warn("#{state.me}: Received vote request with higher term. Stepping down")
+        Logger.warn fn ->
+          "#{state.me}: Received vote request with higher term: #{req.term}. Ours: #{state.current_term}. Stepping down"
+        end
         step_down(state, req.term)
         handle_vote(from, req, state)
+
       true ->
         resp = vote_resp(req.from, state, false)
         {:keep_state_and_data, [{:reply, from, resp}]}
@@ -359,16 +364,16 @@ defmodule TonicRaft.Server do
 
     cond do
       resp.term > state.current_term ->
-        Logger.debug("#{state.me}: Newer term discovered, falling back to follower")
+        Logger.warn("#{state.me}: Newer term discovered, falling back to follower")
         {:next_state, :follower, %{state | current_term: resp.term}}
 
       State.majority?(state) ->
-        Logger.info("#{state.me}: Election won. Tally: #{state.votes}")
+        Logger.info("#{state.me}: Election won in term #{state.current_term}. Tally: #{state.votes}")
 
         {:next_state, :leader, become_leader(state)}
 
       true ->
-        Logger.debug(
+        Logger.warn(
           "Vote granted from #{resp.from} to #{state.me} in term #{state.current_term}. " <>
           "Tally: #{state.votes}"
         )
@@ -435,7 +440,7 @@ defmodule TonicRaft.Server do
   defp step_down(state, term) do
     state = %{state | current_term: term, leader: :none}
     Log.set_metadata(state.me, :none, term)
-    state = reset_timeout(state)
+    reset_timeout(state)
   end
 
   defp handle_vote(from, req, state) do
@@ -446,7 +451,7 @@ defmodule TonicRaft.Server do
     vote_granted = vote_granted?(req, metadata, state)
     resp         = vote_resp(req.from, state, vote_granted)
 
-    Logger.debug("Vote granted for #{req.from}? #{vote_granted}")
+    Logger.info("#{state.me}: Vote granted for #{req.from}? #{vote_granted}")
 
     if vote_granted do
       :ok = persist_vote(state.me, req.term, req.from)
@@ -532,7 +537,7 @@ defmodule TonicRaft.Server do
   end
 
   defp vote_for_myself(state) do
-    persist_vote(state.me, state.current_term, state.config.name)
+    persist_vote(state.me, state.current_term, state.me)
   end
 
   defp persist_vote(name, term, candidate) do
@@ -680,6 +685,7 @@ defmodule TonicRaft.Server do
   defp become_candidate(state) do
     state = State.increment_term(state)
     state = %{state | leader: :none}
+    state = State.add_vote(state, %{vote_granted: true})
     :ok = vote_for_myself(state)
 
     state.configuration
@@ -751,7 +757,7 @@ defmodule TonicRaft.Server do
     # commit to or the largest index that we have in our log
     last_index = min(leader_commit, Log.last_index(state.me))
 
-    Logger.info("#{state.me}: Committing from #{starting_index+1} to #{last_index}")
+    Logger.debug("#{state.me}: Committing from #{starting_index+1} to #{last_index}")
 
     seq(starting_index+1, last_index)
     |> Enum.reduce(state, &commit_entry/2)
@@ -759,7 +765,7 @@ defmodule TonicRaft.Server do
 
   defp commit_entry(index, state) do
     state = %{state | commit_index: index}
-    Logger.info("#{state.me}: Getting entry: #{index}")
+    Logger.debug("#{state.me}: Getting entry: #{index}")
     case Log.get_entry(state.me, index) do
       {:ok, %{type: :noop}} ->
         state

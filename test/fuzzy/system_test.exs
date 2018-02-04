@@ -42,7 +42,7 @@ defmodule TonicRaft.Fuzzy.SystemTest do
     new_servers: [],
     commit_index: 0,
     last_committed_op: nil,
-    to: nil,
+    to: :unknown,
   ]
 
   def clean do
@@ -182,7 +182,8 @@ defmodule TonicRaft.Fuzzy.SystemTest do
     running = List.delete(running, peer)
     cond do
       to == peer ->
-        %{s | running: running, to: Enum.at(running, 0)}
+        new_leader = Enum.at(running, 0)
+        %{s | running: running, to: new_leader}
 
       true ->
         %{s | running: running}
@@ -280,7 +281,10 @@ defmodule TonicRaft.Fuzzy.SystemTest do
   end
 
   def committed_entry_exists_in_log(peer, index, op) do
-    {:ok, %{type: type, data: cmd, index: commit_index}} = TonicRaft.get_entry(peer, index)
+    {:ok, %{type: type, data: cmd, index: commit_index}} = TonicRaft.get_entry(
+      peer,
+      index
+    )
 
     case type do
       :config ->

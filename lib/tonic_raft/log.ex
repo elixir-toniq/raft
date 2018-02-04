@@ -79,7 +79,7 @@ defmodule TonicRaft.Log do
   def delete_range(name, a, b) when a <= b do
     call(name, {:delete_range, a, b})
   end
-  def delete_range(name, _, _) do
+  def delete_range(_name, _, _) do
     :ok
   end
 

@@ -2,38 +2,15 @@ defmodule TonicRaftTest do
   use ExUnit.Case
   doctest TonicRaft
 
-  alias TonicRaft.{Config, Server}
-
-  defmodule StackTestFSM do
-    @behaviour TonicRaft.StateMachine
-
-    def init(_) do
-      []
-    end
-
-    def handle_read(:length, stack) do
-      {Enum.count(stack), stack}
-    end
-
-    def handle_read(:all, stack) do
-      {stack, stack}
-    end
-
-    def handle_write({:enqueue, item}, stack) do
-      new_stack = [item | stack]
-      {Enum.count(new_stack), new_stack}
-    end
-
-    def handle_write(:dequeue, [item | stack]) do
-      {item, stack}
-    end
-
-    def handle_write(:dequeue, []) do
-      {:empty, []}
-    end
-  end
+  alias TonicRaft.{
+    Config,
+    Server,
+    Support.StackFSM,
+  }
 
   setup do
+    Application.ensure_all_started(:tonic_raft)
+
     :tonic_raft
     |> Application.app_dir
     |> File.cd!(fn ->
@@ -56,9 +33,9 @@ defmodule TonicRaftTest do
     # Start each node individually with no configuration. Each node will
     # come up as a follower and remain there since they have no known
     # configuration yet.
-    {:ok, _s1} = TonicRaft.start_node(:s1, %Config{state_machine: StackTestFSM})
-    {:ok, _s2} = TonicRaft.start_node(:s2, %Config{state_machine: StackTestFSM})
-    {:ok, _s3} = TonicRaft.start_node(:s3, %Config{state_machine: StackTestFSM})
+    {:ok, _s1} = TonicRaft.start_node(:s1, %Config{state_machine: StackFSM})
+    {:ok, _s2} = TonicRaft.start_node(:s2, %Config{state_machine: StackFSM})
+    {:ok, _s3} = TonicRaft.start_node(:s3, %Config{state_machine: StackFSM})
 
     # Tell a server about other nodes
     nodes = [:s1, :s2, :s3]
@@ -74,9 +51,9 @@ defmodule TonicRaftTest do
   end
 
   test "log replication with 3 servers" do
-    {:ok, _s1} = TonicRaft.start_node(:s1, %Config{state_machine: StackTestFSM})
-    {:ok, _s2} = TonicRaft.start_node(:s2, %Config{state_machine: StackTestFSM})
-    {:ok, _s3} = TonicRaft.start_node(:s3, %Config{state_machine: StackTestFSM})
+    {:ok, _s1} = TonicRaft.start_node(:s1, %Config{state_machine: StackFSM})
+    {:ok, _s2} = TonicRaft.start_node(:s2, %Config{state_machine: StackFSM})
+    {:ok, _s3} = TonicRaft.start_node(:s3, %Config{state_machine: StackFSM})
 
     # Tell a server about other nodes
     nodes = [:s1, :s2, :s3]
@@ -101,19 +78,12 @@ defmodule TonicRaftTest do
     # Ensure that the fsms all have logs applied
   end
 
-  test "commands sent to followers should redirect to leader" do
-    flunk "Not Implemented"
-  end
-
-  test "commands sent to candidates should error" do
-    flunk "Not Implemented"
-  end
-
+  @tag :focus
   test "leader failure" do
     # Start all nodes
-    {:ok, _s1} = TonicRaft.start_node(:s1, %Config{state_machine: StackTestFSM})
-    {:ok, _s2} = TonicRaft.start_node(:s2, %Config{state_machine: StackTestFSM})
-    {:ok, _s3} = TonicRaft.start_node(:s3, %Config{state_machine: StackTestFSM})
+    {:ok, _s1} = TonicRaft.start_node(:s1, %Config{state_machine: StackFSM})
+    {:ok, _s2} = TonicRaft.start_node(:s2, %Config{state_machine: StackFSM})
+    {:ok, _s3} = TonicRaft.start_node(:s3, %Config{state_machine: StackFSM})
 
     nodes = [:s1, :s2, :s3]
     {:ok, _configuration} = TonicRaft.set_configuration(:s1, nodes)
@@ -141,12 +111,12 @@ defmodule TonicRaftTest do
     assert {:ok, 1} = TonicRaft.write(leader, {:enqueue, 1})
 
     # Reconnect the leader
-    TonicRaft.start_node(:s1, %Config{state_machine: StackTestFSM})
+    TonicRaft.start_node(:s1, %Config{state_machine: StackFSM})
 
     # Ensure that the fsms all have the same content
     assert {:ok, 1} = TonicRaft.write(leader, :dequeue)
 
-    last_index = TonicRaft.status(leader).last_index
+    {:ok, %{last_index: last_index}} = TonicRaft.status(leader)
 
     # Wait for replication to occur on all nodes
     wait_for_replication(:s1, last_index)
@@ -177,7 +147,7 @@ defmodule TonicRaftTest do
 
   defp wait_for_replication(server, index) do
     case TonicRaft.status(server) do
-      %{last_index: ^index} ->
+      {:ok, %{last_index: ^index}} ->
         true
 
       _ ->
