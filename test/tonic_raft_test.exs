@@ -1,8 +1,8 @@
-defmodule TonicRaftTest do
+defmodule RaftTest do
   use ExUnit.Case
-  doctest TonicRaft
+  doctest Raft
 
-  alias TonicRaft.{
+  alias Raft.{
     Config,
     Server,
     Support.StackFSM,
@@ -22,7 +22,7 @@ defmodule TonicRaftTest do
 
     on_exit fn ->
       for s <- [:s1, :s2, :s3] do
-        TonicRaft.stop_node(s)
+        Raft.stop_node(s)
       end
     end
 
@@ -33,45 +33,45 @@ defmodule TonicRaftTest do
     # Start each node individually with no configuration. Each node will
     # come up as a follower and remain there since they have no known
     # configuration yet.
-    {:ok, _s1} = TonicRaft.start_node(:s1, %Config{state_machine: StackFSM})
-    {:ok, _s2} = TonicRaft.start_node(:s2, %Config{state_machine: StackFSM})
-    {:ok, _s3} = TonicRaft.start_node(:s3, %Config{state_machine: StackFSM})
+    {:ok, _s1} = Raft.start_node(:s1, %Config{state_machine: StackFSM})
+    {:ok, _s2} = Raft.start_node(:s2, %Config{state_machine: StackFSM})
+    {:ok, _s3} = Raft.start_node(:s3, %Config{state_machine: StackFSM})
 
     # Tell a server about other nodes
     nodes = [:s1, :s2, :s3]
-    {:ok, _configuration} = TonicRaft.set_configuration(:s1, nodes)
+    {:ok, _configuration} = Raft.set_configuration(:s1, nodes)
 
     # Ensure that s1 has been elected leader which means our configuration has
     # been shared throughout the cluster.
     _ = wait_for_election(nodes)
 
-    assert TonicRaft.leader(:s1) == :s1
-    assert TonicRaft.leader(:s2) == :s1
-    assert TonicRaft.leader(:s3) == :s1
+    assert Raft.leader(:s1) == :s1
+    assert Raft.leader(:s2) == :s1
+    assert Raft.leader(:s3) == :s1
   end
 
   test "log replication with 3 servers" do
-    {:ok, _s1} = TonicRaft.start_node(:s1, %Config{state_machine: StackFSM})
-    {:ok, _s2} = TonicRaft.start_node(:s2, %Config{state_machine: StackFSM})
-    {:ok, _s3} = TonicRaft.start_node(:s3, %Config{state_machine: StackFSM})
+    {:ok, _s1} = Raft.start_node(:s1, %Config{state_machine: StackFSM})
+    {:ok, _s2} = Raft.start_node(:s2, %Config{state_machine: StackFSM})
+    {:ok, _s3} = Raft.start_node(:s3, %Config{state_machine: StackFSM})
 
     # Tell a server about other nodes
     nodes = [:s1, :s2, :s3]
-    {:ok, _configuration} = TonicRaft.set_configuration(:s1, nodes)
+    {:ok, _configuration} = Raft.set_configuration(:s1, nodes)
 
     # Ensure that s1 has been elected leader which means our configuration has
     # been shared throughout the cluster.
     _ = wait_for_election(nodes)
 
-    assert TonicRaft.leader(:s1) == :s1
-    assert TonicRaft.leader(:s2) == :s1
-    assert TonicRaft.leader(:s3) == :s1
+    assert Raft.leader(:s1) == :s1
+    assert Raft.leader(:s2) == :s1
+    assert Raft.leader(:s3) == :s1
 
-    assert {:ok, 1}     = TonicRaft.write(:s1, {:enqueue, 1})
-    assert {:ok, 2}     = TonicRaft.write(:s1, {:enqueue, 2})
-    assert {:ok, 2}     = TonicRaft.write(:s1, :dequeue)
-    assert {:ok, 2}     = TonicRaft.write(:s1, {:enqueue, 4})
-    assert {:ok, [4,1]} = TonicRaft.read(:s1, :all)
+    assert {:ok, 1}     = Raft.write(:s1, {:enqueue, 1})
+    assert {:ok, 2}     = Raft.write(:s1, {:enqueue, 2})
+    assert {:ok, 2}     = Raft.write(:s1, :dequeue)
+    assert {:ok, 2}     = Raft.write(:s1, {:enqueue, 4})
+    assert {:ok, [4,1]} = Raft.read(:s1, :all)
 
     # Ensure that the messages are replicated to all servers
     #
@@ -81,22 +81,22 @@ defmodule TonicRaftTest do
   @tag :focus
   test "leader failure" do
     # Start all nodes
-    {:ok, _s1} = TonicRaft.start_node(:s1, %Config{state_machine: StackFSM})
-    {:ok, _s2} = TonicRaft.start_node(:s2, %Config{state_machine: StackFSM})
-    {:ok, _s3} = TonicRaft.start_node(:s3, %Config{state_machine: StackFSM})
+    {:ok, _s1} = Raft.start_node(:s1, %Config{state_machine: StackFSM})
+    {:ok, _s2} = Raft.start_node(:s2, %Config{state_machine: StackFSM})
+    {:ok, _s3} = Raft.start_node(:s3, %Config{state_machine: StackFSM})
 
     nodes = [:s1, :s2, :s3]
-    {:ok, _configuration} = TonicRaft.set_configuration(:s1, nodes)
+    {:ok, _configuration} = Raft.set_configuration(:s1, nodes)
 
     # Ensure that s1 has been elected leader which means our configuration has
     # been shared throughout the cluster.
     _ = wait_for_election(nodes)
-    assert TonicRaft.leader(:s1) == :s1
-    assert TonicRaft.leader(:s2) == :s1
-    assert TonicRaft.leader(:s3) == :s1
+    assert Raft.leader(:s1) == :s1
+    assert Raft.leader(:s2) == :s1
+    assert Raft.leader(:s3) == :s1
 
     # Disconnect the leader from the cluster
-    TonicRaft.stop_node(:s1)
+    Raft.stop_node(:s1)
 
     # Wait until a new leader is elected
     leader = wait_for_election([:s2, :s3])
@@ -108,15 +108,15 @@ defmodule TonicRaftTest do
     # Apply should not work on old leader
 
     # Apply should work on new leader
-    assert {:ok, 1} = TonicRaft.write(leader, {:enqueue, 1})
+    assert {:ok, 1} = Raft.write(leader, {:enqueue, 1})
 
     # Reconnect the leader
-    TonicRaft.start_node(:s1, %Config{state_machine: StackFSM})
+    Raft.start_node(:s1, %Config{state_machine: StackFSM})
 
     # Ensure that the fsms all have the same content
-    assert {:ok, 1} = TonicRaft.write(leader, :dequeue)
+    assert {:ok, 1} = Raft.write(leader, :dequeue)
 
-    {:ok, %{last_index: last_index}} = TonicRaft.status(leader)
+    {:ok, %{last_index: last_index}} = Raft.status(leader)
 
     # Wait for replication to occur on all nodes
     wait_for_replication(:s1, last_index)
@@ -146,7 +146,7 @@ defmodule TonicRaftTest do
   end
 
   defp wait_for_replication(server, index) do
-    case TonicRaft.status(server) do
+    case Raft.status(server) do
       {:ok, %{last_index: ^index}} ->
         true
 

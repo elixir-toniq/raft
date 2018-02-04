@@ -1,4 +1,4 @@
-defmodule TonicRaft.ServerTest do
+defmodule Raft.ServerTest do
   use ExUnit.Case, async: true
   use ExUnitProperties
 
@@ -10,7 +10,7 @@ defmodule TonicRaft.ServerTest do
                 term_b <- non_negative_integer(),
                 index_a <- non_negative_integer(),
                 index_b <- non_negative_integer() do
-        result = TonicRaft.Server.up_to_date?(term_a, index_a, term_b, index_b)
+        result = Raft.Server.up_to_date?(term_a, index_a, term_b, index_b)
         cond do
           term_a > term_b                        -> assert result == true
           term_a < term_b                        -> assert result == false

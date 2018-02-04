@@ -1,4 +1,4 @@
-defmodule TonicRaft.Log.Metadata do
+defmodule Raft.Log.Metadata do
   @moduledoc """
   This module defines the metadata for a raft node. This data is persisted to
   disk as described in the paper.

@@ -1,4 +1,4 @@
-defmodule TonicRaft.StateMachine do
+defmodule Raft.StateMachine do
   @moduledoc """
   This module provides a behaviour that can be implemented by clients to make
   use of the replicated log.

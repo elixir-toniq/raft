@@ -1,5 +1,5 @@
-defmodule TonicRaft.LogStore do
-  alias TonicRaft.Log.{
+defmodule Raft.LogStore do
+  alias Raft.Log.{
     Entry,
     Metadata,
   }
@@ -198,5 +198,5 @@ defmodule TonicRaft.LogStore do
     :binary.decode_unsigned(index)
   end
 
-  defp adapter, do: Application.get_env(:tonic_raft, :log_store, TonicRaft.LogStore.RocksDB)
+  defp adapter, do: Application.get_env(:tonic_raft, :log_store, Raft.LogStore.RocksDB)
 end

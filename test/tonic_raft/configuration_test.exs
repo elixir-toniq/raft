@@ -1,7 +1,7 @@
-defmodule TonicRaft.ConfigurationTest do
+defmodule Raft.ConfigurationTest do
   use ExUnit.Case, async: true
 
-  alias TonicRaft.{Configuration}
+  alias Raft.{Configuration}
 
   describe "quorum_max/2" do
     test "returns the max index for which we have a quorum" do

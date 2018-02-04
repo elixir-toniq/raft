@@ -1,10 +1,10 @@
-defmodule TonicRaft.Server.Supervisor do
+defmodule Raft.Server.Supervisor do
   @moduledoc """
   Manages Server processes.
   """
   use DynamicSupervisor
 
-  alias TonicRaft.PeerSupervisor
+  alias Raft.PeerSupervisor
 
   def start_link(arg) do
     DynamicSupervisor.start_link(__MODULE__, arg, name: __MODULE__)

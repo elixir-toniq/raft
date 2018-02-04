@@ -1,5 +1,5 @@
-defmodule TonicRaft do
-  alias TonicRaft.{
+defmodule Raft do
+  alias Raft.{
     Log,
     Server,
     Config,
@@ -15,14 +15,14 @@ defmodule TonicRaft do
   @spec start_node(peer(), Config.t) :: {:ok, pid()} | {:error, term()}
 
   def start_node(name, config) do
-    TonicRaft.Server.Supervisor.start_peer(name, config)
+    Raft.Server.Supervisor.start_peer(name, config)
   end
 
   @doc """
   Gracefully stops the node.
   """
   def stop_node(name) do
-    TonicRaft.Server.Supervisor.stop_peer(name)
+    Raft.Server.Supervisor.stop_peer(name)
   end
 
   @doc """
@@ -33,7 +33,7 @@ defmodule TonicRaft do
   @spec write(peer(), term(), any()) :: {:ok, term()} | {:error, :timeout} | {:error, :not_leader}
 
   def write(leader, cmd, timeout \\ 3_000) do
-    TonicRaft.Server.write(leader, {UUID.uuid4(), cmd}, timeout)
+    Raft.Server.write(leader, {UUID.uuid4(), cmd}, timeout)
   end
 
   @doc """
@@ -42,7 +42,7 @@ defmodule TonicRaft do
   @spec read(peer(), term(), any()) :: {:ok, term()} | {:error, :timeout} | {:error, :not_leader}
 
   def read(leader, cmd, timeout \\ 3_000) do
-    TonicRaft.Server.read(leader, {UUID.uuid4(), cmd}, timeout)
+    Raft.Server.read(leader, {UUID.uuid4(), cmd}, timeout)
   end
 
   @doc """
@@ -61,7 +61,7 @@ defmodule TonicRaft do
   @spec status(peer()) :: {:ok, %{}} | {:error, :no_node}
 
   def status(name) do
-    {:ok, TonicRaft.Server.status(name)}
+    {:ok, Raft.Server.status(name)}
   catch
     :exit, {:noproc, _} ->
       {:error, :no_node}
@@ -103,12 +103,12 @@ defmodule TonicRaft do
     File.rm_rf!(path)
     File.mkdir(path)
 
-    {:ok, _s1} = TonicRaft.start_node(:s1, %Config{data_dir: path})
-    {:ok, _s2} = TonicRaft.start_node(:s2, %Config{data_dir: path})
-    {:ok, _s3} = TonicRaft.start_node(:s3, %Config{data_dir: path})
+    {:ok, _s1} = Raft.start_node(:s1, %Config{data_dir: path})
+    {:ok, _s2} = Raft.start_node(:s2, %Config{data_dir: path})
+    {:ok, _s3} = Raft.start_node(:s3, %Config{data_dir: path})
 
     nodes = [:s1, :s2, :s3]
-    {:ok, _configuration} = TonicRaft.set_configuration(:s1, nodes)
+    {:ok, _configuration} = Raft.set_configuration(:s1, nodes)
 
     {:s1, :s2, :s3}
   end

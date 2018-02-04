@@ -1,5 +1,5 @@
-defmodule TonicRaft.Server.State do
-  alias TonicRaft.{Configuration}
+defmodule Raft.Server.State do
+  alias Raft.{Configuration}
 
   defstruct [
     me: nil,

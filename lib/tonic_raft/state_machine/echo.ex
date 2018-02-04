@@ -1,5 +1,5 @@
-defmodule TonicRaft.StateMachine.Echo do
-  @behaviour TonicRaft.StateMachine
+defmodule Raft.StateMachine.Echo do
+  @behaviour Raft.StateMachine
 
   def init(_), do: :ok
 

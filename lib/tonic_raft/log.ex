@@ -1,8 +1,8 @@
-defmodule TonicRaft.Log do
+defmodule Raft.Log do
   use GenServer
   require Logger
 
-  alias TonicRaft.{
+  alias Raft.{
     Config,
     Log.Entry,
     Log.Metadata,
@@ -203,7 +203,7 @@ defmodule TonicRaft.Log do
         Logger.debug("#{log_name(state.name)} has data")
         restore_configuration(state)
       false ->
-        configuration = %TonicRaft.Configuration{}
+        configuration = %Raft.Configuration{}
         entry = Entry.configuration(0, configuration)
         entry = %{entry | index: 0}
         {:ok, last_index} = LogStore.store_entries(state.log_store, [entry])

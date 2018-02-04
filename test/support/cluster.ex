@@ -1,6 +1,6 @@
-defmodule TonicRaft.Support.Cluster do
-  alias TonicRaft.Support.StackFSM
-  alias TonicRaft.{
+defmodule Raft.Support.Cluster do
+  alias Raft.Support.StackFSM
+  alias Raft.{
     Config,
     LogStore,
   }
@@ -15,20 +15,20 @@ defmodule TonicRaft.Support.Cluster do
 
     [first | _] = names
 
-    {:ok, _configuration} = TonicRaft.set_configuration(first, names)
+    {:ok, _configuration} = Raft.set_configuration(first, names)
 
     %{servers: names, errors: [], writes: []}
   end
 
   def stop(%{servers: servers}) do
     servers
-    |> Enum.map(&TonicRaft.stop_node/1)
+    |> Enum.map(&Raft.stop_node/1)
   end
 
   def random_shutdown(%{servers: servers}=cluster) do
     server = Enum.random(servers)
     IO.puts "Shutting down #{server}"
-    TonicRaft.stop_node(server)
+    Raft.stop_node(server)
     {server, cluster}
   end
 
@@ -39,7 +39,7 @@ defmodule TonicRaft.Support.Cluster do
 
   def wait_for_election(%{servers: servers}) do
     servers
-    |> Enum.map(&TonicRaft.status/1)
+    |> Enum.map(&Raft.status/1)
     |> Enum.filter(fn {resp, _} -> resp == :ok end)
     |> Enum.map(fn {:ok, status} -> status end)
     |> Enum.find(& &1.current_state == :leader)
@@ -53,7 +53,7 @@ defmodule TonicRaft.Support.Cluster do
   end
 
   def wait_for_replication(server, index) do
-    case TonicRaft.status(server) do
+    case Raft.status(server) do
       %{last_index: ^index} ->
         true
 
@@ -64,7 +64,7 @@ defmodule TonicRaft.Support.Cluster do
   end
 
   def start_node(name, config) do
-    {:ok, node} = TonicRaft.start_node(name, config)
+    {:ok, node} = Raft.start_node(name, config)
     node
   end
 

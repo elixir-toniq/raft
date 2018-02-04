@@ -1,4 +1,4 @@
-defmodule TonicRaft.Fuzzy.SystemTest do
+defmodule Raft.Fuzzy.SystemTest do
   use PropCheck.StateM
   use PropCheck
   use ExUnit.Case
@@ -15,7 +15,7 @@ defmodule TonicRaft.Fuzzy.SystemTest do
         {history, state, result} = run_commands(__MODULE__, cmds)
 
         for n <- state.running do
-          TonicRaft.stop_node(n)
+          Raft.stop_node(n)
         end
 
         clean()
@@ -57,7 +57,7 @@ defmodule TonicRaft.Fuzzy.SystemTest do
   end
 
   def default_config do
-    %TonicRaft.Config{}
+    %Raft.Config{}
   end
 
   def start_nodes(nodes) do
@@ -67,7 +67,7 @@ defmodule TonicRaft.Fuzzy.SystemTest do
   end
 
   def start_node(n) do
-    TonicRaft.start_node(n, default_config())
+    Raft.start_node(n, default_config())
   end
 
   #
@@ -114,19 +114,19 @@ defmodule TonicRaft.Fuzzy.SystemTest do
 
   def initial_state, do: %__MODULE__{state: :init}
 
-  def precondition(%{state: :init}, {:call, TonicRaft, _, _}), do: false
+  def precondition(%{state: :init}, {:call, Raft, _, _}), do: false
 
   def precondition(%{state: :init, old_servers: []}, {:call, _, :start_node, _}), do: false
 
   def precondition(%{state: :init}, _), do: true
 
-  def precondition(%{state: :blank}, {:call, TonicRaft, op, _}) do
+  def precondition(%{state: :blank}, {:call, Raft, op, _}) do
     op == :set_configuration
   end
 
-  def precondition(%{running: []}, {:call, TonicRaft, _, _}), do: false
+  def precondition(%{running: []}, {:call, Raft, _, _}), do: false
 
-  def precondition(%{running: running}, {:call, TonicRaft, :stop_node, [to]}) do
+  def precondition(%{running: running}, {:call, Raft, :stop_node, [to]}) do
     Enum.member?(running, to)
   end
 
@@ -134,7 +134,7 @@ defmodule TonicRaft.Fuzzy.SystemTest do
     Enum.member?(old, to) && !Enum.member?(running, to)
   end
 
-  def precondition(%{running: running}, {:call, TonicRaft, op, [to, _]}) do
+  def precondition(%{running: running}, {:call, Raft, op, [to, _]}) do
     case op do
       :write ->
         Enum.member?(running, to)
@@ -151,14 +151,14 @@ defmodule TonicRaft.Fuzzy.SystemTest do
   end
 
   def next_state(%{state: :blank, to: to, running: running}=s, _,
-                 {:call, TonicRaft, :set_configuration, [to, running]}) do
+                 {:call, Raft, :set_configuration, [to, running]}) do
     %{s | commit_index: 1, state: :stable, old_servers: running}
   end
 
-  def next_state(%{state: :stable}=s, {:ok, _}, {:call, TonicRaft, :write, [_, op]}) do
+  def next_state(%{state: :stable}=s, {:ok, _}, {:call, Raft, :write, [_, op]}) do
     %{s | commit_index: s.commit_index + 1, last_committed_op: op}
   end
-  def next_state(%{state: :stable}=s, {:error, e}, {:call, TonicRaft, :write, [_, _op]}) do
+  def next_state(%{state: :stable}=s, {:error, e}, {:call, Raft, :write, [_, _op]}) do
     case e do
       {:redirect, :none} ->
         s
@@ -169,7 +169,7 @@ defmodule TonicRaft.Fuzzy.SystemTest do
         %{s | to: :unknown}
     end
   end
-  def next_state(%{state: :stable}=s, _, {:call, TonicRaft, :write, [_, _]}) do
+  def next_state(%{state: :stable}=s, _, {:call, Raft, :write, [_, _]}) do
     s
   end
 
@@ -178,7 +178,7 @@ defmodule TonicRaft.Fuzzy.SystemTest do
   end
 
   def next_state(%{state: :stable, to: to, running: running}=s, _,
-                 {:call, TonicRaft, :stop_node, [peer]}) do
+                 {:call, Raft, :stop_node, [peer]}) do
     running = List.delete(running, peer)
     cond do
       to == peer ->
@@ -194,12 +194,12 @@ defmodule TonicRaft.Fuzzy.SystemTest do
     true
   end
 
-  def postcondition(%{state: :blank}, {:call, TonicRaft, :set_configuration, [_, _]}, {:ok, _}) do
+  def postcondition(%{state: :blank}, {:call, Raft, :set_configuration, [_, _]}, {:ok, _}) do
     true
   end
 
   def postcondition(%{state: :stable, old_servers: old, to: to}=s,
-                    {:call, TonicRaft, :write, [to, _]},
+                    {:call, Raft, :write, [to, _]},
                     {:ok, op}) do
     {_, server_state} = :sys.get_state(to)
     Enum.member?(old, to) &&
@@ -208,7 +208,7 @@ defmodule TonicRaft.Fuzzy.SystemTest do
   end
 
   def postcondition(%{state: :stable}=s,
-                    {:call, TonicRaft, :write, [to, _]},
+                    {:call, Raft, :write, [to, _]},
                     {:error, {:redirect, leader}}) do
     case leader do
       :none ->
@@ -219,13 +219,13 @@ defmodule TonicRaft.Fuzzy.SystemTest do
   end
 
   def postcondition(%{state: :stable, to: to}=s,
-                    {:call, TonicRaft, :write, [to, _]},
+                    {:call, Raft, :write, [to, _]},
                     {:error, :election_in_progress}) do
     committed_entry_exists_in_log(s, to)
     true
   end
 
-  def postcondition(%{state: :stable}=s, {:call, TonicRaft, :stop_node, [peer]}, :ok) do
+  def postcondition(%{state: :stable}=s, {:call, Raft, :stop_node, [peer]}, :ok) do
     cond do
       peer == s.to ->
         true
@@ -265,7 +265,7 @@ defmodule TonicRaft.Fuzzy.SystemTest do
   def maybe_change_last_op(last_op, _, {:error, _}), do: last_op
 
   defp call(cmd, args) do
-    {:call, TonicRaft, cmd, args}
+    {:call, Raft, cmd, args}
   end
 
   def call_self(cmd, args) do
@@ -281,7 +281,7 @@ defmodule TonicRaft.Fuzzy.SystemTest do
   end
 
   def committed_entry_exists_in_log(peer, index, op) do
-    {:ok, %{type: type, data: cmd, index: commit_index}} = TonicRaft.get_entry(
+    {:ok, %{type: type, data: cmd, index: commit_index}} = Raft.get_entry(
       peer,
       index
     )
@@ -303,7 +303,7 @@ defmodule TonicRaft.Fuzzy.SystemTest do
   end
 
   def committed_entry_exists_in_log(%{commit_index: ci, last_committed_op: op}, to) do
-    {:ok, %{type: type, data: cmd, index: commit_index}} = TonicRaft.get_entry(to, ci)
+    {:ok, %{type: type, data: cmd, index: commit_index}} = Raft.get_entry(to, ci)
 
     case type do
       :config ->
