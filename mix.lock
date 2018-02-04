@@ -6,6 +6,6 @@
   "propcheck": {:hex, :propcheck, "1.0.4", "f83174301b637bce011a4ebf0e4f10e9bae38d6eefebdd117677c7884bc99aa4", [:mix], [{:proper, "~> 1.2.0", [hex: :proper, repo: "hexpm", optional: false]}], "hexpm"},
   "proper": {:hex, :proper, "1.2.0", "1466492385959412a02871505434e72e92765958c60dba144b43863554b505a4", [:make, :mix, :rebar3], [], "hexpm"},
   "rocksdb": {:hex, :rocksdb, "0.13.1", "14baf1c240f4a678fa4cb0bf624016d5d12a4a0e3f09b8f52924abdce31fbd66", [], [], "hexpm"},
-  "stream_data": {:git, "https://github.com/alfert/stream_data", "a92df13d2f9c907cfd84663c4e9e14e7c1b0502c", [branch: "unfold"]},
+  "stream_data": {:hex, :stream_data, "0.4.0", "128c01bfd0fae0108d169eee1772aeed6958604f8782abc2d6e11da4e52468b0", [:mix], [], "hexpm"},
   "uuid": {:hex, :uuid, "1.1.8", "e22fc04499de0de3ed1116b770c7737779f226ceefa0badb3592e64d5cfb4eb9", [], [], "hexpm"},
 }
