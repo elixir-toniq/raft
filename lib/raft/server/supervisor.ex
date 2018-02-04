@@ -16,7 +16,7 @@ defmodule Raft.Server.Supervisor do
 
   def stop_peer(name) do
     require Logger
-    Logger.info("#{name}: Shutting down")
+    Logger.info("#{PeerSupervisor.sup_name(name)}: Shutting down")
 
     pid =
       name

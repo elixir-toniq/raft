@@ -8,8 +8,8 @@ defmodule Raft.Fuzzy.PartitionsTest do
   }
 
   def commands, do: one_of([
-    tuple({constant(:enqueue), term()}),
-    constant(:dequeue),
+    tuple({constant(:put), term()}),
+    constant(:pop),
   ])
 
   setup do

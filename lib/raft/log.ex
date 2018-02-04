@@ -126,7 +126,13 @@ defmodule Raft.Log do
 
   def init({name, opts}) do
     Logger.info("#{log_name(name)}: Restoring old state", metadata: name)
-    {:ok, log_store} = LogStore.open(Config.db_path(name, opts))
+    {:ok, log_store} = case name do
+      {me, _} ->
+        LogStore.open(Config.db_path(me, opts))
+
+      ^name ->
+        LogStore.open(Config.db_path(name, opts))
+    end
 
     metadata = LogStore.get_metadata(log_store)
     last_index = LogStore.last_index(log_store)
@@ -139,7 +145,6 @@ defmodule Raft.Log do
       configuration: nil,
     }
     state = init_log(state)
-
     {:ok, state}
   end
 
@@ -187,6 +192,7 @@ defmodule Raft.Log do
 
   defp call(name, msg), do: GenServer.call(log_name(name), msg)
 
+  defp log_name({name, _}), do: log_name(name)
   defp log_name(name), do: :"#{name}_log"
 
   defp apply_entry(state, %{type: :config, data: data}) do

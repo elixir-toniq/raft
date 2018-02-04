@@ -14,7 +14,7 @@ defmodule Raft do
   """
   @spec start_node(peer(), Config.t) :: {:ok, pid()} | {:error, term()}
 
-  def start_node(name, config) do
+  def start_node(name, config \\ %Config{}) do
     Raft.Server.Supervisor.start_peer(name, config)
   end
 
@@ -88,6 +88,10 @@ defmodule Raft do
   catch
     :exit, {:noproc, _} ->
       {:error, :no_node}
+  end
+
+  def test_node(name) do
+    Raft.start_node({name, node()}, %Raft.Config{state_machine: Raft.StateMachine.Stack})
   end
 
   @doc """
