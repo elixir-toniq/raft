@@ -1,5 +1,10 @@
 defmodule TonicRaft do
-  alias TonicRaft.{Server, Config, Configuration}
+  alias TonicRaft.{
+    Log,
+    Server,
+    Config,
+    Configuration
+  }
   require Logger
 
   @type peer :: atom() | {atom(), atom()}
@@ -7,10 +12,10 @@ defmodule TonicRaft do
   @doc """
   Starts a new peer with a given Config.t.
   """
-  @spec start_node(peer(), Config.t) :: {:ok, term()} | {:error, term()}
+  @spec start_node(peer(), Config.t) :: {:ok, pid()} | {:error, term()}
 
-  def start_node(name, opts) do
-    TonicRaft.Server.Supervisor.start_peer(name, opts)
+  def start_node(name, config) do
+    TonicRaft.Server.Supervisor.start_peer(name, config)
   end
 
   @doc """
@@ -25,20 +30,19 @@ defmodule TonicRaft do
   manner. This operation blocks until the log has been replicated to a
   majority of servers.
   """
-  @spec write(peer(), term(), list()) :: {:ok, term()} | {:error, :timeout} | {:error, :not_leader}
+  @spec write(peer(), term(), any()) :: {:ok, term()} | {:error, :timeout} | {:error, :not_leader}
 
-  def write(leader, cmd, _opts \\ []) do
-    id = UUID.uuid4()
-    TonicRaft.Server.write(leader, {id, cmd})
+  def write(leader, cmd, timeout \\ 3_000) do
+    TonicRaft.Server.write(leader, {UUID.uuid4(), cmd}, timeout)
   end
 
   @doc """
   Reads state that has been applied to the state machine.
   """
-  @spec read(peer(), list()) :: {:ok, term()} | {:error, :timeout} | {:error, :not_leader}
+  @spec read(peer(), term(), any()) :: {:ok, term()} | {:error, :timeout} | {:error, :not_leader}
 
-  def read(leader, cmd, _opts \\ []) do
-    TonicRaft.Server.read(leader, {UUID.uuid4(), cmd})
+  def read(leader, cmd, timeout \\ 3_000) do
+    TonicRaft.Server.read(leader, {UUID.uuid4(), cmd}, timeout)
   end
 
   @doc """
@@ -54,10 +58,13 @@ defmodule TonicRaft do
   Returns the current status for a peer. This is used for debugging and
   testing purposes only.
   """
-  @spec status(peer()) :: %{}
+  @spec status(peer()) :: {:ok, %{}} | {:error, :no_node}
 
   def status(name) do
-    TonicRaft.Server.status(name)
+    {:ok, TonicRaft.Server.status(name)}
+  catch
+    :exit, {:noproc, _} ->
+      {:error, :no_node}
   end
 
   @doc """
@@ -73,6 +80,17 @@ defmodule TonicRaft do
   end
 
   @doc """
+  Gets an entry from the log. This should only be used for testing purposes.
+  """
+  @spec get_entry(peer(), non_neg_integer()) :: {:ok, Log.Entry.t} | {:error, term()}
+  def get_entry(to, index) do
+    Log.get_entry(to, index)
+  catch
+    :exit, {:noproc, _} ->
+      {:error, :no_node}
+  end
+
+  @doc """
   Creates a test cluster for running on a single. Should only be used for
   development and testing.
   """
@@ -85,14 +103,14 @@ defmodule TonicRaft do
     File.rm_rf!(path)
     File.mkdir(path)
 
-    {:ok, s1} = TonicRaft.start_node(:s1, %Config{data_dir: path})
-    {:ok, s2} = TonicRaft.start_node(:s2, %Config{data_dir: path})
-    {:ok, s3} = TonicRaft.start_node(:s3, %Config{data_dir: path})
+    {:ok, _s1} = TonicRaft.start_node(:s1, %Config{data_dir: path})
+    {:ok, _s2} = TonicRaft.start_node(:s2, %Config{data_dir: path})
+    {:ok, _s3} = TonicRaft.start_node(:s3, %Config{data_dir: path})
 
     nodes = [:s1, :s2, :s3]
     {:ok, _configuration} = TonicRaft.set_configuration(:s1, nodes)
 
-    {s1, s2, s3}
+    {:s1, :s2, :s3}
   end
 end
 

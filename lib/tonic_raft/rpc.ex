@@ -73,9 +73,11 @@ defmodule TonicRaft.RPC do
   @spec send_msg(msg()) :: pid()
 
   def send_msg(%{from: from, to: to}=rpc) do
+    # IO.puts "About to send message"
     spawn fn ->
       to
       |> Server.to_server
+      # |> IO.inspect(label: "Sending rpc")
       |> GenStateMachine.call(rpc)
       |> case do
         %AppendEntriesResp{}=resp ->

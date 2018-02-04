@@ -37,7 +37,9 @@ defmodule TonicRaft.Mixfile do
     {:msgpax, "~> 2.0"},
     {:uuid, "~> 1.1"},
     {:dialyxir, "~> 0.5", only: :dev, runtime: false},
-    {:stream_data, "~> 0.4", only: [:dev, :test]},
+    # {:stream_data, "~> 0.4", only: [:dev, :test]},
+    {:stream_data, git: "https://github.com/alfert/stream_data", branch: "unfold", only: [:dev, :test]},
+    {:propcheck, "~> 1.0", only: [:test]},
   ]
 
   defp description do

@@ -43,6 +43,17 @@ defmodule TonicRaft.LogStore.RocksDB do
     end
   end
 
+  def delete_range(%{logs: db}, keys) do
+    {:ok, batch} = :rocksdb.batch()
+
+    for k <- keys do
+      :ok = :rocksdb.batch_delete(batch, k)
+    end
+
+    :ok = :rocksdb.write_batch(db, batch, [])
+    :ok = :rocksdb.close_batch(batch)
+  end
+
   @impl true
   def store_metadata(%{conf: db}, meta) do
     case put(db, @metadata, meta) do
@@ -83,7 +94,7 @@ defmodule TonicRaft.LogStore.RocksDB do
   end
 
   defp put(db, key, value) when is_binary(key) and is_binary(value) do
-    :rocksdb.put(db, key, value, [])
+    :rocksdb.put(db, key, value, [sync: true])
   end
 
   def get(db, key) when is_binary(key) do

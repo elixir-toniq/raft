@@ -3,7 +3,9 @@
   "gen_state_machine": {:git, "https://github.com/keathley/gen_state_machine", "af6820e65f80e11a56e2f5fcc87c78197a9bc2d8", []},
   "jason": {:hex, :jason, "1.0.0-rc.1", "c8421d4e6e6ef0dd7c2b64ff63589f8561116808fa003dddfd5360cde7bb4625", [], [{:decimal, "~> 1.0", [hex: :decimal, repo: "hexpm", optional: true]}], "hexpm"},
   "msgpax": {:hex, :msgpax, "2.1.0", "6ca513821f4654e0e6762a673b60b4c9a81fd8a0db7f7618a8b06bfdc1f1fbdd", [], [{:plug, "~> 1.0", [hex: :plug, repo: "hexpm", optional: true]}], "hexpm"},
+  "propcheck": {:hex, :propcheck, "1.0.4", "f83174301b637bce011a4ebf0e4f10e9bae38d6eefebdd117677c7884bc99aa4", [:mix], [{:proper, "~> 1.2.0", [hex: :proper, repo: "hexpm", optional: false]}], "hexpm"},
+  "proper": {:hex, :proper, "1.2.0", "1466492385959412a02871505434e72e92765958c60dba144b43863554b505a4", [:make, :mix, :rebar3], [], "hexpm"},
   "rocksdb": {:hex, :rocksdb, "0.13.1", "14baf1c240f4a678fa4cb0bf624016d5d12a4a0e3f09b8f52924abdce31fbd66", [], [], "hexpm"},
-  "stream_data": {:hex, :stream_data, "0.4.0", "128c01bfd0fae0108d169eee1772aeed6958604f8782abc2d6e11da4e52468b0", [], [], "hexpm"},
+  "stream_data": {:git, "https://github.com/alfert/stream_data", "a92df13d2f9c907cfd84663c4e9e14e7c1b0502c", [branch: "unfold"]},
   "uuid": {:hex, :uuid, "1.1.8", "e22fc04499de0de3ed1116b770c7737779f226ceefa0badb3592e64d5cfb4eb9", [], [], "hexpm"},
 }

@@ -1,5 +1,7 @@
 use Mix.Config
 
 config :logger,
-  level: :debug
-  # level: :error
+  handle_otp_reports: true,
+  handle_sasl_reports: true,
+  # level: :info
+  level: :error

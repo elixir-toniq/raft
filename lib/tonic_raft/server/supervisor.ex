@@ -23,7 +23,11 @@ defmodule TonicRaft.Server.Supervisor do
       |> PeerSupervisor.sup_name
       |> Process.whereis
 
-    DynamicSupervisor.terminate_child(__MODULE__, pid)
+    if pid do
+      DynamicSupervisor.terminate_child(__MODULE__, pid)
+    else
+      {:error, :no_peer}
+    end
   end
 
   def init(_arg) do

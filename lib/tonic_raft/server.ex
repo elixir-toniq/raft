@@ -40,7 +40,7 @@ defmodule TonicRaft.Server do
   @doc """
   Starts a new server.
   """
-  @spec start_link({atom(), Config.t}) :: {:ok, pid} | {:error, term()}
+  @spec start_link({TonicRaft.peer(), Config.t}) :: {:ok, pid} | {:error, term()}
 
   def start_link({name, config}) do
     GenStateMachine.start_link(__MODULE__, {:follower, name, config}, [name: name])
@@ -56,8 +56,8 @@ defmodule TonicRaft.Server do
   """
   # @spec apply(server(), term()) :: :ok | {:error, :timeout} | {:error, :not_leader}
 
-  def write(peer, cmd) do
-    GenStateMachine.call(peer, {:write, cmd})
+  def write(peer, cmd, timeout \\ 3_000) do
+    GenStateMachine.call(peer, {:write, cmd}, timeout)
   end
 
   @doc """
@@ -66,8 +66,8 @@ defmodule TonicRaft.Server do
   confirm that they have not been deposed before processing the read operation
   as described in the raft paper, section 8: Client Interaction.
   """
-  def read(peer, cmd) do
-    GenStateMachine.call(peer, {:read, cmd})
+  def read(peer, cmd, timeout \\ 3_000) do
+    GenStateMachine.call(peer, {:read, cmd}, timeout)
   end
 
   @doc """
@@ -118,7 +118,7 @@ defmodule TonicRaft.Server do
       configuration: configuration,
     }
 
-    Logger.info("#{state.me}: State has been restored", [server: config.name])
+    Logger.info("#{state.me}: State has been restored", [server: name])
     {:ok, :follower, reset_timeout(state)}
   end
 
@@ -128,7 +128,8 @@ defmodule TonicRaft.Server do
 
   # Write new entries to the log and replicate
   def leader({:call, from}, {:write, {id, cmd}}, state) do
-    Logger.info("Writing new command to log")
+    state = reset_timeout(heartbeat_timeout(), state)
+    Logger.info("#{state.me}: Writing new command to log")
 
     entry = Entry.command(state.current_term, cmd)
     {:ok, last_index} = Log.append(state.me, [entry])
@@ -165,9 +166,11 @@ defmodule TonicRaft.Server do
   # The next time a heartbeat times out we will send them all of the entries
   # and hopefully catch them up. If they aren't then we try again.
   def leader(:cast, %AppendEntriesResp{success: false, from: from}, state) do
-    Logger.debug("#{state.me}: Follower #{from} is out of date. Decrementing index")
-
     next_index = Map.update!(state.next_index, from, & &1-1)
+    Logger.warn fn ->
+      "#{state.me}: Follower #{from} is out of date. Decrementing index to #{inspect next_index}"
+    end
+
     {:next_state, :leader, %{state | next_index: next_index}}
   end
 
@@ -203,7 +206,9 @@ defmodule TonicRaft.Server do
   def follower(:info, :timeout, %{configuration: config}=state) do
     case Configuration.has_vote?(state.me, config) do
       true ->
-        Logger.warn("#{state.me}: Becoming candidate")
+        Logger.warn fn ->
+          "#{state.me}: Becoming candidate of term: #{state.current_term+1}"
+        end
         new_state = become_candidate(state)
         {:next_state, :candidate, new_state}
       false ->
@@ -240,16 +245,10 @@ defmodule TonicRaft.Server do
 
   def follower({:call, from}, {:set_configuration, _change}, state) do
     Logger.warn("#{state.me}: Can't set config on a follower that already has a configuration")
-    {:keep_state_and_data, [{:reply, from, {:error, :not_leader}}]}
-  end
-
-  def follower({:call, from}, :write, state) do
-    Logger.warn("#{state.me}: Can't write on a server that isn't the leader")
-    {:keep_state_and_data, [{:reply, from, {:error, :not_leader}}]}
+    {:keep_state_and_data, [{:reply, from, {:error, {:redirect, state.leader}}}]}
   end
 
   # Leader has a lower term then us
-  # def follower(:cast, %AppendEntriesReq{term: term},
   def follower({:call, from}, %AppendEntriesReq{term: term},
                %{current_term: current_term}=state) when current_term > term do
     Logger.debug("#{state.me}: Rejected append entries from leader with a lower term")
@@ -262,7 +261,6 @@ defmodule TonicRaft.Server do
   # Append entries looks good so lets try to save them.
   def follower({:call, from}, %AppendEntriesReq{}=req, state) do
     state = reset_timeout(state)
-    # TODO - When bumping the term we also need to undefine who we voted for this term
     state = set_term(req.term, state)
 
     resp = %AppendEntriesResp{
@@ -273,9 +271,12 @@ defmodule TonicRaft.Server do
 
     if consistent?(req, state) do
       Logger.debug(fn ->
-        "#{state.me}: Log is consistent. Appending #{Enum.count(req.entries)}" \
-        <> " new entries"
+        count = Enum.count(req.entries)
+        me = state.me
+        indexes = Enum.map(req.entries, & &1.index)
+        "#{me}: Log is consistent. Appending #{count} new entries at indexes: #{inspect indexes}"
       end)
+
       {:ok, index} = Log.append(state.me, req.entries)
       configuration = Log.get_configuration(state.me)
       state = commit_entries(req.leader_commit, state)
@@ -283,13 +284,32 @@ defmodule TonicRaft.Server do
       resp = %{resp | success: true, index: index}
       {:next_state, :follower, state, [{:reply, from, resp}]}
     else
-      Logger.warn("#{state.me}: Log is out of date. Failing append")
+      Logger.warn("#{state.me}: Our log is inconsistent with the leaders")
+      last_index = Log.last_index(state.me)
+      prev = req.prev_log_index
+      if prev <= last_index do
+        Logger.warn fn ->
+          "#{state.me}: Clearing logs from #{prev} to #{last_index}"
+        end
+        Log.delete_range(state.me, prev, last_index)
+      end
+
       {:next_state, :follower, state, [{:reply, from, resp}]}
     end
   end
 
   def follower({:call, from}, %RequestVoteReq{}=req, state) do
     handle_vote(from, req, state)
+  end
+
+  def follower({:call, from}, {:write, _}, state) do
+    Logger.warn("#{state.me}: Can't write on a server that isn't the leader")
+    {:keep_state_and_data, [{:reply, from, {:error, {:redirect, state.leader}}}]}
+  end
+
+  def follower({:call, from}, {:read, _}, state) do
+    Logger.warn("#{state.me}: Can't read from a server that isn't the leader")
+    {:keep_state_and_data, [{:reply, from, {:error, {:redirect, state.leader}}}]}
   end
 
   def follower(event, msg, state) do
@@ -316,19 +336,24 @@ defmodule TonicRaft.Server do
   end
 
   def candidate({:call, from}, {:set_configuration, _change}, _state) do
-    {:keep_state_and_data, [{:reply, from, {:error, :not_leader}}]}
-  end
-
-  def candidate({:call, from}, :write, _state) do
-    Logger.warn("Can't write to a server that isn't the leader")
-    {:keep_state_and_data, [{:reply, from, {:error, :not_leader}}]}
+    {:keep_state_and_data, [{:reply, from, {:error, :election_in_progress}}]}
   end
 
   # A peer is trying to become leader. If it has a higher term then we
   # need to step down and become a follower
   def candidate({:call, from}, %RequestVoteReq{}=req, state) do
-    Logger.warn("#{state.me}: Received vote request with higher term. Stepping down")
-    handle_vote(from, req, state)
+    cond do
+      req.term > state.current_term ->
+        Logger.warn fn ->
+          "#{state.me}: Received vote request with higher term: #{req.term}. Ours: #{state.current_term}. Stepping down"
+        end
+        step_down(state, req.term)
+        handle_vote(from, req, state)
+
+      true ->
+        resp = vote_resp(req.from, state, false)
+        {:keep_state_and_data, [{:reply, from, resp}]}
+    end
   end
 
   def candidate(:cast, %RequestVoteResp{}=resp, state) do
@@ -339,16 +364,16 @@ defmodule TonicRaft.Server do
 
     cond do
       resp.term > state.current_term ->
-        Logger.debug("#{state.me}: Newer term discovered, falling back to follower")
+        Logger.warn("#{state.me}: Newer term discovered, falling back to follower")
         {:next_state, :follower, %{state | current_term: resp.term}}
 
       State.majority?(state) ->
-        Logger.info("#{state.me}: Election won. Tally: #{state.votes}")
+        Logger.info("#{state.me}: Election won in term #{state.current_term}. Tally: #{state.votes}")
 
         {:next_state, :leader, become_leader(state)}
 
       true ->
-        Logger.debug(
+        Logger.warn(
           "Vote granted from #{resp.from} to #{state.me} in term #{state.current_term}. " <>
           "Tally: #{state.votes}"
         )
@@ -358,16 +383,27 @@ defmodule TonicRaft.Server do
 
   # A server is sending us append entries which must mean they've been elected
   # leader. We should fallback to follower status
-  def candidate({:call, _from}, %AppendEntriesReq{term: term}, 
+  def candidate({:call, _from}, %AppendEntriesReq{term: term},
                 %{current_term: our_term}=state) when term >= our_term do
     Logger.debug("#{state.me}: Received append entries. Stepping down")
     step_down(state, term)
+    {:next_state, :follower, state, []}
   end
 
   # Ignore append entries that are below our current term
   def candidate({:call, _from}, %AppendEntriesReq{}, state) do
     Logger.debug("#{state.me}: Ignoring stale append entries")
     {:keep_state_and_data, []}
+  end
+
+  def candidate({:call, from}, {:write, _}, _state) do
+    Logger.warn("Can't write to a server that isn't the leader")
+    {:keep_state_and_data, [{:reply, from, {:error, :election_in_progress}}]}
+  end
+
+  def candidate({:call, from}, {:read, _}, _state) do
+    Logger.warn("Can't from a server that isn't the leader")
+    {:keep_state_and_data, [{:reply, from, {:error, :election_in_progress}}]}
   end
 
   def candidate(msg, event, data) do
@@ -404,18 +440,18 @@ defmodule TonicRaft.Server do
   defp step_down(state, term) do
     state = %{state | current_term: term, leader: :none}
     Log.set_metadata(state.me, :none, term)
-    state = reset_timeout(state)
-    {:next_state, :follower, state, []}
+    reset_timeout(state)
   end
 
   defp handle_vote(from, req, state) do
     Logger.debug("Getting a vote request")
+    state        = reset_timeout(state)
     state        = set_term(req.term, state)
     metadata     = Log.get_metadata(state.me)
     vote_granted = vote_granted?(req, metadata, state)
     resp         = vote_resp(req.from, state, vote_granted)
 
-    Logger.debug("Vote granted for #{req.from}? #{vote_granted}")
+    Logger.info("#{state.me}: Vote granted for #{req.from}? #{vote_granted}")
 
     if vote_granted do
       :ok = persist_vote(state.me, req.term, req.from)
@@ -427,7 +463,7 @@ defmodule TonicRaft.Server do
   defp vote_granted?(req, meta, state) do
     cond do
       req_is_behind?(req, state) ->
-        Logger.debug("#{state.me}: Request is behind ")
+        Logger.debug("#{state.me}: Request is behind")
         false
 
       voted_for_someone_else?(req, meta) ->
@@ -446,8 +482,16 @@ defmodule TonicRaft.Server do
   defp req_is_behind?(%{term: rt}, %{current_term: ct}), do: rt < ct
 
   defp voted_for_someone_else?(%{term: term, from: candidate},
-                               %{term: vote_term, voted_for: voted_for}) do
-    vote_term == term && voted_for != :none && candidate != voted_for
+                               %{term: term, voted_for: candidate}) do
+    false
+  end
+  defp voted_for_someone_else?(%{term: term},
+                               %{term: term, voted_for: :none}) do
+    false
+  end
+  defp voted_for_someone_else?(%{term: term, from: candidate},
+                               %{term: term, voted_for: someone}) do
+    candidate != someone
   end
 
   defp candidate_up_to_date?(%{last_log_index: c_term, last_log_term: c_index},
@@ -457,15 +501,20 @@ defmodule TonicRaft.Server do
     up_to_date?(c_term, c_index, our_term, last_index)
   end
 
-  def up_to_date?(term_a, index_a, term_b, index_b) do
-    cond do
-      term_a < term_b ->
-        false
-      term_a == term_b && index_a < index_b ->
-        false
-      true ->
-        true
-    end
+  def up_to_date?(cand_term, _, our_term, _) when cand_term > our_term do
+    true
+  end
+  def up_to_date?(cand_term, _, our_term, _) when cand_term < our_term do
+    false
+  end
+  def up_to_date?(term, cand_index, term, our_index) when cand_index > our_index do
+    true
+  end
+  def up_to_date?(term, cand_index, term, our_index) when cand_index < our_index do
+    false
+  end
+  def up_to_date?(term, index, term, index) do
+    true
   end
 
   defp election_timeout(%{config: config}) do
@@ -488,7 +537,7 @@ defmodule TonicRaft.Server do
   end
 
   defp vote_for_myself(state) do
-    persist_vote(state.me, state.current_term, state.config.name)
+    persist_vote(state.me, state.current_term, state.me)
   end
 
   defp persist_vote(name, term, candidate) do
@@ -569,7 +618,7 @@ defmodule TonicRaft.Server do
   end
 
   defp maybe_send_read_replies(%{configuration: conf, match_index: mi}=state) do
-    Logger.debug("Sending any eligible read requests")
+    Logger.debug("#{state.me}: Sending any eligible read requests")
 
     commit_index = Configuration.quorum_max(conf, mi)
     {elegible, remaining} = elegible_requests(state, commit_index)
@@ -611,7 +660,7 @@ defmodule TonicRaft.Server do
     commit_index = Configuration.quorum_max(state.configuration, state.match_index)
     cond do
       commit_index > state.commit_index and safe_to_commit?(commit_index, state) ->
-        Logger.debug("Committing to index #{commit_index}")
+        Logger.debug("#{state.me}: Committing to index #{commit_index}")
         commit_entries(commit_index, state)
 
       commit_index == state.commit_index ->
@@ -636,6 +685,7 @@ defmodule TonicRaft.Server do
   defp become_candidate(state) do
     state = State.increment_term(state)
     state = %{state | leader: :none}
+    state = State.add_vote(state, %{vote_granted: true})
     :ok = vote_for_myself(state)
 
     state.configuration
@@ -695,41 +745,53 @@ defmodule TonicRaft.Server do
     end
   end
 
-  defp commit_entries(leader_index, %{commit_index: commit_index}=state)
-                                   when commit_index >= leader_index, do: state
+  defp seq(a, b), do: :lists.seq(a, b)
+
+  defp commit_entries(leader_commit, %{commit_index: commit_index}=state)
+                                   when commit_index >= leader_commit, do: state
 
   # Starting at the last known index and working towards the new last index
   # apply each log to the state machine
-  defp commit_entries(leader_index, %{commit_index: commit_index}=state) do
-    last_index = min(leader_index, Log.last_index(state.me))
+  defp commit_entries(leader_commit, %{commit_index: starting_index}=state) do
+    # Returns the last possible index. Its either the index they want us to
+    # commit to or the largest index that we have in our log
+    last_index = min(leader_commit, Log.last_index(state.me))
 
-    (commit_index+1..last_index)
+    Logger.debug("#{state.me}: Committing from #{starting_index+1} to #{last_index}")
+
+    seq(starting_index+1, last_index)
     |> Enum.reduce(state, &commit_entry/2)
   end
 
   defp commit_entry(index, state) do
+    state = %{state | commit_index: index}
+    Logger.debug("#{state.me}: Getting entry: #{index}")
     case Log.get_entry(state.me, index) do
       {:ok, %{type: :noop}} ->
-        %{state | commit_index: index}
+        state
 
       {:ok, %{type: :command, data: cmd}=log} ->
         {result, new_sms} = apply_log_to_state_machine(state, cmd)
-        respond_to_client_requests(state.client_reqs, log, {:ok, result})
-        %{state | commit_index: index, state_machine_state: new_sms}
+        reqs = respond_to_client_requests(state, log, {:ok, result})
+        %{state | state_machine_state: new_sms, client_reqs: reqs}
 
-      {:ok, %{type: :config}=log} ->
-        # TODO - This is probably wrong. We actually need to update the
-        # configuration with whats in the log.
+      {:ok, %{type: :config, data: %{state: :stable}}=log} ->
         rpy = {:ok, state.configuration}
-        respond_to_client_requests(state.client_reqs, log, rpy)
-        %{state | commit_index: index}
+        reqs = respond_to_client_requests(state, log, rpy)
+        %{state | client_reqs: reqs}
     end
   end
 
-  defp respond_to_client_requests(reqs, log, rpy) do
+  defp respond_to_client_requests(%{client_reqs: reqs, leader: me, me: me},
+                                  log, rpy) do
     reqs
     |> Enum.filter(fn req -> req.index == log.index end)
     |> Enum.each(fn req -> respond_to_client(req, rpy) end)
+
+    Enum.reject(reqs, fn req -> req.index == log.index end)
+  end
+  defp respond_to_client_requests(%{client_reqs: reqs}, _, _) do
+    reqs
   end
 
   defp respond_to_client(%{from: from}, rpy) do
@@ -739,11 +801,8 @@ defmodule TonicRaft.Server do
   defp consistent?(%{prev_log_index: 0, prev_log_term: 0}, _), do: true
   defp consistent?(%{prev_log_index: index, prev_log_term: term}, state) do
     case Log.get_entry(state.me, index) do
-      {:ok, %{term: ^term}} ->
-        true
-
-      {:ok, %{term: _term}} ->
-        false
+      {:ok, %{term: entry_term}} ->
+        term == entry_term
 
       {:error, :not_found} ->
         false
