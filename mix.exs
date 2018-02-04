@@ -1,16 +1,24 @@
 defmodule Raft.Mixfile do
   use Mix.Project
 
+  @version "0.1.0"
+  @maintainers [
+    "Chris Keathley"
+  ]
+
   def project do
     [
+      name: "Raft",
       app: :raft,
-      version: "0.1.0",
-      elixir: "~> 1.5",
+      version: @version,
+      elixir: "~> 1.6",
       elixirc_paths: elixirc_paths(Mix.env),
       start_permanent: Mix.env == :prod,
+
       deps: deps(),
-      name: "Raft",
       description: description(),
+      package: package(),
+
       dialyzer: [
         plt_add_deps: :transitive,
       ],
@@ -37,11 +45,23 @@ defmodule Raft.Mixfile do
     {:dialyxir, "~> 0.5", only: :dev, runtime: false},
     {:stream_data, "~> 0.4", only: [:dev, :test]},
     {:propcheck, "~> 1.0", only: [:test]},
+    {:ex_doc, "~> 0.16", only: :dev},
   ]
 
   defp description do
     """
-    An leader election, and concensus protocol based on Raft.
+    An implementation of the raft consensus protocol. Provides a way to create
+    strongly consistent, distributed state machines.
     """
+  end
+
+  defp package do
+    [
+      name: :raft,
+      files: ["lib", "mix.exs", "README.md", "LICENSE"],
+      maintainers: @maintainers,
+      licenses: ["Apache 2.0"],
+      links: %{"GitHub" => "https://github.com/keathley/raft"},
+    ]
   end
 end
