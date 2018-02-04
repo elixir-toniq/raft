@@ -2,7 +2,7 @@
   "dialyxir": {:hex, :dialyxir, "0.5.1", "b331b091720fd93e878137add264bac4f644e1ddae07a70bf7062c7862c4b952", [], [], "hexpm"},
   "earmark": {:hex, :earmark, "1.2.4", "99b637c62a4d65a20a9fb674b8cffb8baa771c04605a80c911c4418c69b75439", [:mix], [], "hexpm"},
   "ex_doc": {:hex, :ex_doc, "0.18.2", "993e0a95e9fbb790ac54ea58e700b45b299bd48bc44b4ae0404f28161f37a83e", [:mix], [{:earmark, "~> 1.1", [hex: :earmark, repo: "hexpm", optional: false]}], "hexpm"},
-  "gen_state_machine": {:git, "https://github.com/keathley/gen_state_machine", "af6820e65f80e11a56e2f5fcc87c78197a9bc2d8", []},
+  "gen_state_machine": {:hex, :gen_state_machine, "2.0.1", "85efd5a0376929c3a4246dd943e17564a2908c7ddd7acd242d84594e785d83f8", [:mix], [], "hexpm"},
   "jason": {:hex, :jason, "1.0.0-rc.1", "c8421d4e6e6ef0dd7c2b64ff63589f8561116808fa003dddfd5360cde7bb4625", [], [{:decimal, "~> 1.0", [hex: :decimal, repo: "hexpm", optional: true]}], "hexpm"},
   "msgpax": {:hex, :msgpax, "2.1.0", "6ca513821f4654e0e6762a673b60b4c9a81fd8a0db7f7618a8b06bfdc1f1fbdd", [], [{:plug, "~> 1.0", [hex: :plug, repo: "hexpm", optional: true]}], "hexpm"},
   "propcheck": {:hex, :propcheck, "1.0.4", "f83174301b637bce011a4ebf0e4f10e9bae38d6eefebdd117677c7884bc99aa4", [:mix], [{:proper, "~> 1.2.0", [hex: :proper, repo: "hexpm", optional: false]}], "hexpm"},

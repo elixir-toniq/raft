@@ -39,7 +39,7 @@ defmodule Raft.Mixfile do
 
   # Run "mix help deps" to learn about dependencies.
   defp deps, do: [
-    {:gen_state_machine, git: "https://github.com/keathley/gen_state_machine"},
+    {:gen_state_machine, "~> 2.0"},
     {:rocksdb, "~> 0.13.1"},
     {:uuid, "~> 1.1"},
     {:dialyxir, "~> 0.5", only: :dev, runtime: false},
