@@ -126,8 +126,13 @@ defmodule Raft.Log do
 
   def init({name, opts}) do
     Logger.info("#{log_name(name)}: Restoring old state", metadata: name)
-    {me, _} = name
-    {:ok, log_store} = LogStore.open(Config.db_path(me, opts))
+    {:ok, log_store} = case name do
+      {me, _} ->
+        LogStore.open(Config.db_path(me, opts))
+
+      ^name ->
+        LogStore.open(Config.db_path(name, opts))
+    end
 
     metadata = LogStore.get_metadata(log_store)
     last_index = LogStore.last_index(log_store)

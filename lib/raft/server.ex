@@ -841,8 +841,9 @@ defmodule Raft.Server do
     end
   end
 
-  defp name({me, _}), do: me
   defp name(%{me: {me, _}}), do: me
   defp name(%{me: me}), do: me
+  defp name({me, _}), do: me
+  defp name(me) when is_atom(me), do: me
 end
 

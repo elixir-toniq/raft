@@ -1,11 +1,11 @@
 defmodule Raft.Support.Cluster do
-  alias Raft.Support.StackFSM
   alias Raft.{
     Config,
     LogStore,
+    StateMachine.Stack,
   }
 
-  def start(node_count, fsm \\ StackFSM) do
+  def start(node_count, fsm \\ Stack) do
     names =
       (0..node_count)
       |> Enum.map(& :"s#{&1}")
@@ -33,7 +33,7 @@ defmodule Raft.Support.Cluster do
   end
 
   def restart(cluster, server) do
-    start_node(server, %Config{state_machine: StackFSM})
+    start_node(server, %Config{state_machine: Stack})
     cluster
   end
 
