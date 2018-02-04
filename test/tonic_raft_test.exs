@@ -9,9 +9,9 @@ defmodule RaftTest do
   }
 
   setup do
-    Application.ensure_all_started(:tonic_raft)
+    Application.ensure_all_started(:raft)
 
-    :tonic_raft
+    :raft
     |> Application.app_dir
     |> File.cd!(fn ->
       File.ls!()

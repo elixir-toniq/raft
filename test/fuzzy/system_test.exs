@@ -10,7 +10,7 @@ defmodule Raft.Fuzzy.SystemTest do
     numtests(50, forall cmds in more_commands(40, commands(__MODULE__)) do
       trap_exit do
         clean()
-        Application.ensure_all_started(:tonic_raft)
+        Application.ensure_all_started(:raft)
 
         {history, state, result} = run_commands(__MODULE__, cmds)
 
@@ -20,7 +20,7 @@ defmodule Raft.Fuzzy.SystemTest do
 
         clean()
 
-        Application.stop(:tonic_raft)
+        Application.stop(:raft)
 
         (result == :ok)
         |> when_fail(
@@ -46,7 +46,7 @@ defmodule Raft.Fuzzy.SystemTest do
   ]
 
   def clean do
-    :tonic_raft
+    :raft
     |> Application.app_dir
     |> File.cd!(fn ->
       File.ls!()

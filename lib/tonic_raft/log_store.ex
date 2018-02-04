@@ -198,5 +198,5 @@ defmodule Raft.LogStore do
     :binary.decode_unsigned(index)
   end
 
-  defp adapter, do: Application.get_env(:tonic_raft, :log_store, Raft.LogStore.RocksDB)
+  defp adapter, do: Application.get_env(:raft, :log_store, Raft.LogStore.RocksDB)
 end

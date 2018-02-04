@@ -26,7 +26,7 @@ defmodule Raft.Config do
 
   def db_path(name, config), do: config |> data_dir |> Path.join("#{name}")
 
-  def data_dir(%{data_dir: ""}), do: :tonic_raft
+  def data_dir(%{data_dir: ""}), do: :raft
                                  |> Application.app_dir()
                                  # |> Path.join("data")
 
