@@ -51,7 +51,7 @@ defmodule Raft do
   @spec leader(peer()) :: peer() | :none
 
   def leader(name) do
-    Server.current_leader(name)
+    Raft.Server.current_leader(name)
   end
 
   @doc """
