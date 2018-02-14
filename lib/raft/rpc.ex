@@ -1,4 +1,9 @@
 defmodule Raft.RPC do
+  @moduledoc """
+  Defines multiple rpc commands and functions for broadcasting messages to other
+  peers.
+  """
+
   alias Raft.Configuration.Server
 
   require Logger
@@ -56,13 +61,6 @@ defmodule Raft.RPC do
              | %RequestVoteReq{}
              | %RequestVoteResp{}
 
-  # def replicate(state, log) do
-  #   state.configurations.latest.servers
-  #   |> Enum.reject(self())
-  #   |> Enum.map(append_entries(log))
-  #   |> Enum.each(&send_msg/1)
-  # end
-
   def broadcast(rpcs) do
     Enum.map(rpcs, &send_msg/1)
   end
@@ -73,11 +71,9 @@ defmodule Raft.RPC do
   @spec send_msg(msg()) :: pid()
 
   def send_msg(%{from: from, to: to}=rpc) do
-    # IO.puts "About to send message"
     spawn fn ->
       to
       |> Server.to_server
-      # |> IO.inspect(label: "Sending rpc")
       |> GenStateMachine.call(rpc)
       |> case do
         %AppendEntriesResp{}=resp ->
@@ -93,18 +89,4 @@ defmodule Raft.RPC do
       end
     end
   end
-
-  # defp append_entries(log) do
-  #   fn member ->
-  #     entries = Log.from_index(log, member.next_index)
-  #     req = %AppendEntriesReq{
-  #       leader_id: self(),
-  #       entries: entries,
-  #       prev_log_index: nil,
-  #       prev_log_term: nil,
-  #       leader_commit: nil,
-  #     }
-  #     {member, req}
-  #   end
-  # end
 end

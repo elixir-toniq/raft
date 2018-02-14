@@ -1,7 +1,8 @@
 defmodule Raft.Server.Supervisor do
   @moduledoc """
   Manages Server processes.
-  """
+  """ && false
+
   use DynamicSupervisor
 
   alias Raft.PeerSupervisor

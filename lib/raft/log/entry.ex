@@ -1,4 +1,8 @@
 defmodule Raft.Log.Entry do
+  @moduledoc """
+  Defines a log entry struct.
+  """
+
   defstruct [:index, :term, :type, :data]
 
   @typedoc """

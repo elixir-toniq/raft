@@ -1,4 +1,8 @@
 defmodule Raft.Configuration do
+  @moduledoc """
+  Defines a struct and common operations for managing cluster membership
+  """
+
   defstruct [state: :none, old_servers: [], new_servers: [], index: 0]
 
   alias __MODULE__

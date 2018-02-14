@@ -1,4 +1,8 @@
 defmodule Raft.Server do
+  @moduledoc """
+  The Server module provides the raft fsm.
+  """
+
   use GenStateMachine, callback_mode: :state_functions
 
   alias Raft.{
@@ -101,16 +105,9 @@ defmodule Raft.Server do
   end
 
   @doc """
-  TODO: Implement this workflow.
-  * Pull logs out of storage
-  * Pull current term out of storage
-  * Set a new election timeout
-  * Find the most recent config change (start from most recent snapshot if we have one)
-  * Restore state:
-  * - set last index
-  * - set last_log
-  * - set current term
-  * - set the configuration
+  Initializes the state of the server.
+  If log files already exist for this server name then it reads from those
+  files to get the current configuration, term, etc.
   """
   def init({:follower, name, config}) do
     Logger.info(fmt(%{me: name}, :follower, "Starting Raft state machine"))

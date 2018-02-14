@@ -1,4 +1,9 @@
 defmodule Raft.Server.State do
+  @moduledoc """
+  Defines a state struct and common operations for the internal state of the 
+  server process.
+  """
+
   alias Raft.{Configuration}
 
   defstruct [

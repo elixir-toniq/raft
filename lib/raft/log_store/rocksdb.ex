@@ -1,4 +1,9 @@
 defmodule Raft.LogStore.RocksDB do
+  @moduledoc """
+  A rocksdb implementation of the `LogStore` behaviour. At the moment we're
+  using 2 different databases: one for the logs and one for the metadata store.
+  """
+
   @behaviour Raft.LogStore
 
   @db_logs "logs.tonic"

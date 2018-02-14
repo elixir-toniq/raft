@@ -1,4 +1,10 @@
 defmodule Raft.Log do
+  @moduledoc """
+  The `Log` module provides an api for all log operations. Since the log process
+  is the only process that can access the underlying log store we cache several
+  values in the log process state.
+  """
+
   use GenServer
   require Logger
 
@@ -69,7 +75,6 @@ defmodule Raft.Log do
 
   @doc """
   Gets the current configuration.
-  TODO - Figure out if this is the right place for this.
   """
   def get_configuration(name), do: call(name, :get_configuration)
 

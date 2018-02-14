@@ -1,4 +1,10 @@
 defmodule Raft.LogStore do
+  @moduledoc """
+  The `LogStore` module provides a behaviour and high-level api for interacting
+  with the underlying database engine. All values are encoded and decoded using
+  `:erlang.term_to_binary` and `:erlang.binary_to_term` before they're stored.
+  """
+
   alias Raft.Log.{
     Entry,
     Metadata,
