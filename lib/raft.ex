@@ -255,6 +255,7 @@ defmodule Raft do
 
   def set_configuration(peer, configuration) do
     id = UUID.uuid4()
+    configuration = Enum.map(configuration, &set_node/1)
     Server.set_configuration(peer, {id, configuration})
   end
 
@@ -300,5 +301,8 @@ defmodule Raft do
   defp do_start(name, mod, config) do
     Raft.Server.Supervisor.start_peer({name, node()}, %{config | state_machine: mod})
   end
+
+  defp set_node(server) when is_atom(server), do: {server, node()}
+  defp set_node(peer), do: peer
 
 end
