@@ -2,15 +2,9 @@ defmodule Raft.StateMachine do
   @moduledoc """
   This module provides a behaviour that can be implemented by clients to make
   use of the replicated log.
-
-  TODO - Fill out the rest of this with detail and description.
-  Maybe add a stack example.
   """
 
-  @typedoc """
-  The name of the node that is starting the state machine.
-  """
-  @type name() :: atom() | {atom(), atom()}
+  @type name :: Raft.peer()
 
   @typedoc """
   The value to return to client after completing a read or write.
@@ -45,4 +39,10 @@ defmodule Raft.StateMachine do
   here will be lost after a crash recovery or when starting a new server.
   """
   @callback handle_read(cmd(), state()) :: val() | {val(), state()}
+
+  defmacro __using__(_) do
+    quote location: :keep do
+      @behaviour unquote(__MODULE__)
+    end
+  end
 end

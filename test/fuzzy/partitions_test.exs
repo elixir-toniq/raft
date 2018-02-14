@@ -36,8 +36,7 @@ defmodule Raft.Fuzzy.PartitionsTest do
     cluster = Cluster.start(5)
 
     # wait for leader to be elected
-    leader = Cluster.wait_for_election(cluster)
-    IO.inspect(leader, label: "Got a leader")
+    _leader = Cluster.wait_for_election(cluster)
 
     {:ok, applier} = Applier.start_link({cluster, commands()})
     :ok = Applier.start_applying(applier)

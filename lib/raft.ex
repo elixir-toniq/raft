@@ -8,20 +8,26 @@ defmodule Raft do
   require Logger
 
   @type peer :: atom() | {atom(), atom()}
+  @type opts :: [
+    {:name, peer()},
+    {:config, Config.t},
+  ]
 
   @doc """
   Starts a new peer with a given Config.t.
   """
-  @spec start_node(peer(), Config.t) :: {:ok, pid()} | {:error, term()}
+  @spec start_peer(module(), opts()) :: {:ok, pid()} | {:error, term()}
 
-  def start_node(name, config \\ %Config{}) do
-    Raft.Server.Supervisor.start_peer(name, config)
+  def start_peer(mod, opts) do
+    name = Keyword.get(opts, :name)
+    config = Keyword.get(opts, :config) || %Raft.Config{}
+    do_start(name, mod, config)
   end
 
   @doc """
   Gracefully stops the node.
   """
-  def stop_node(name) do
+  def stop_peer(name) do
     Raft.Server.Supervisor.stop_peer(name)
   end
 
@@ -51,7 +57,7 @@ defmodule Raft do
   @spec leader(peer()) :: peer() | :none
 
   def leader(name) do
-    Server.current_leader(name)
+    Raft.Server.current_leader(name)
   end
 
   @doc """
@@ -91,7 +97,7 @@ defmodule Raft do
   end
 
   def test_node(name) do
-    Raft.start_node({name, node()}, %Raft.Config{state_machine: Raft.StateMachine.Stack})
+    Raft.start_peer(Raft.StateMachine.Stack, name: {name, node()})
   end
 
   @doc """
@@ -107,14 +113,20 @@ defmodule Raft do
     File.rm_rf!(path)
     File.mkdir(path)
 
-    {:ok, _s1} = Raft.start_node(:s1, %Config{data_dir: path})
-    {:ok, _s2} = Raft.start_node(:s2, %Config{data_dir: path})
-    {:ok, _s3} = Raft.start_node(:s3, %Config{data_dir: path})
+    {:ok, _s1} = Raft.start_peer(Raft.StateMachine.Echo, name: :s1, config: %Config{data_dir: path})
+    {:ok, _s2} = Raft.start_peer(Raft.StateMachine.Echo, name: :s2, config: %Config{data_dir: path})
+    {:ok, _s3} = Raft.start_peer(Raft.StateMachine.Echo, name: :s3, config: %Config{data_dir: path})
 
     nodes = [:s1, :s2, :s3]
     {:ok, _configuration} = Raft.set_configuration(:s1, nodes)
 
     {:s1, :s2, :s3}
   end
+
+  defp do_start(nil, _, _), do: raise ArgumentError, "Must include a `:name` argument"
+  defp do_start(name, mod, config) do
+    Raft.Server.Supervisor.start_peer({name, node()}, %{config | state_machine: mod})
+  end
+
 end
 

@@ -29,6 +29,9 @@ defmodule Raft.Server do
 
   @initial_state %State{}
 
+  @doc """
+  This defines the child spec correctly
+  """
   def child_spec(opts), do: %{
     id: __MODULE__,
     start: {__MODULE__, :start_link, [opts]},
@@ -846,4 +849,3 @@ defmodule Raft.Server do
   defp name({me, _}), do: me
   defp name(me) when is_atom(me), do: me
 end
-
