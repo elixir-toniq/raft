@@ -3,7 +3,6 @@ defmodule RaftTest do
   doctest Raft
 
   alias Raft.{
-    Config,
     Server,
     StateMachine.Stack,
   }
@@ -22,7 +21,7 @@ defmodule RaftTest do
 
     on_exit fn ->
       for s <- [:s1, :s2, :s3] do
-        Raft.stop_node(s)
+        Raft.stop_peer(s)
       end
     end
 
@@ -33,9 +32,9 @@ defmodule RaftTest do
     # Start each node individually with no configuration. Each node will
     # come up as a follower and remain there since they have no known
     # configuration yet.
-    {:ok, _s1} = Raft.start_node(:s1, %Config{state_machine: Stack})
-    {:ok, _s2} = Raft.start_node(:s2, %Config{state_machine: Stack})
-    {:ok, _s3} = Raft.start_node(:s3, %Config{state_machine: Stack})
+    {:ok, _s1} = Raft.start_peer(Stack, name: :s1)
+    {:ok, _s2} = Raft.start_peer(Stack, name: :s2)
+    {:ok, _s3} = Raft.start_peer(Stack, name: :s3)
 
     # Tell a server about other nodes
     nodes = [:s1, :s2, :s3]
@@ -51,9 +50,9 @@ defmodule RaftTest do
   end
 
   test "log replication with 3 servers" do
-    {:ok, _s1} = Raft.start_node(:s1, %Config{state_machine: Stack})
-    {:ok, _s2} = Raft.start_node(:s2, %Config{state_machine: Stack})
-    {:ok, _s3} = Raft.start_node(:s3, %Config{state_machine: Stack})
+    {:ok, _s1} = Raft.start_peer(Stack, name: :s1)
+    {:ok, _s2} = Raft.start_peer(Stack, name: :s2)
+    {:ok, _s3} = Raft.start_peer(Stack, name: :s3)
 
     # Tell a server about other nodes
     nodes = [:s1, :s2, :s3]
@@ -81,9 +80,9 @@ defmodule RaftTest do
   @tag :focus
   test "leader failure" do
     # Start all nodes
-    {:ok, _s1} = Raft.start_node(:s1, %Config{state_machine: Stack})
-    {:ok, _s2} = Raft.start_node(:s2, %Config{state_machine: Stack})
-    {:ok, _s3} = Raft.start_node(:s3, %Config{state_machine: Stack})
+    {:ok, _s1} = Raft.start_peer(Stack, name: :s1)
+    {:ok, _s2} = Raft.start_peer(Stack, name: :s2)
+    {:ok, _s3} = Raft.start_peer(Stack, name: :s3)
 
     nodes = [:s1, :s2, :s3]
     {:ok, _configuration} = Raft.set_configuration(:s1, nodes)
@@ -96,7 +95,7 @@ defmodule RaftTest do
     assert Raft.leader(:s3) == :s1
 
     # Disconnect the leader from the cluster
-    Raft.stop_node(:s1)
+    Raft.stop_peer(:s1)
 
     # Wait until a new leader is elected
     leader = wait_for_election([:s2, :s3])
@@ -111,7 +110,7 @@ defmodule RaftTest do
     assert {:ok, 1} = Raft.write(leader, {:put, 1})
 
     # Reconnect the leader
-    Raft.start_node(:s1, %Config{state_machine: Stack})
+    Raft.start_peer(Stack, name: :s1)
 
     # Ensure that the fsms all have the same content
     assert {:ok, 1} = Raft.write(leader, :pop)

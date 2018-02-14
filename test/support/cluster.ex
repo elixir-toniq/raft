@@ -11,7 +11,7 @@ defmodule Raft.Support.Cluster do
       |> Enum.map(& :"s#{&1}")
 
     names
-    |> Enum.map(& start_node(&1, %Config{state_machine: fsm}))
+    |> Enum.map(& start_peer(fsm, &1))
 
     [first | _] = names
 
@@ -22,18 +22,18 @@ defmodule Raft.Support.Cluster do
 
   def stop(%{servers: servers}) do
     servers
-    |> Enum.map(&Raft.stop_node/1)
+    |> Enum.map(&Raft.stop_peer/1)
   end
 
   def random_shutdown(%{servers: servers}=cluster) do
     server = Enum.random(servers)
     IO.puts "Shutting down #{server}"
-    Raft.stop_node(server)
+    Raft.stop_peer(server)
     {server, cluster}
   end
 
   def restart(cluster, server) do
-    start_node(server, %Config{state_machine: Stack})
+    start_peer(Stack, server)
     cluster
   end
 
@@ -63,8 +63,8 @@ defmodule Raft.Support.Cluster do
     end
   end
 
-  def start_node(name, config) do
-    {:ok, node} = Raft.start_node(name, config)
+  def start_peer(mod, name) do
+    {:ok, node} = Raft.start_peer(mod, name: name)
     node
   end
 
