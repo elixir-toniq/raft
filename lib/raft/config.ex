@@ -1,4 +1,8 @@
 defmodule Raft.Config do
+  @moduledoc """
+  Defines the configuration for peer servers.
+  """
+
   defstruct [
     state_machine: Raft.StateMachine.Echo,
     min_election_timeout: 300,

@@ -1,4 +1,8 @@
 defmodule Raft.StateMachine.Stack do
+  @moduledoc """
+  An example of a stack state machine
+  """ && false
+
   @behaviour Raft.StateMachine
 
   def init(_) do

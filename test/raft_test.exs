@@ -44,9 +44,9 @@ defmodule RaftTest do
     # been shared throughout the cluster.
     _ = wait_for_election(nodes)
 
-    assert Raft.leader(:s1) == :s1
-    assert Raft.leader(:s2) == :s1
-    assert Raft.leader(:s3) == :s1
+    assert Raft.leader(:s1) == {:s1, node()}
+    assert Raft.leader(:s2) == {:s1, node()}
+    assert Raft.leader(:s3) == {:s1, node()}
   end
 
   test "log replication with 3 servers" do
@@ -62,9 +62,9 @@ defmodule RaftTest do
     # been shared throughout the cluster.
     _ = wait_for_election(nodes)
 
-    assert Raft.leader(:s1) == :s1
-    assert Raft.leader(:s2) == :s1
-    assert Raft.leader(:s3) == :s1
+    assert Raft.leader(:s1) == {:s1, node()}
+    assert Raft.leader(:s2) == {:s1, node()}
+    assert Raft.leader(:s3) == {:s1, node()}
 
     assert {:ok, 1}     = Raft.write(:s1, {:put, 1})
     assert {:ok, 2}     = Raft.write(:s1, {:put, 2})
@@ -90,9 +90,9 @@ defmodule RaftTest do
     # Ensure that s1 has been elected leader which means our configuration has
     # been shared throughout the cluster.
     _ = wait_for_election(nodes)
-    assert Raft.leader(:s1) == :s1
-    assert Raft.leader(:s2) == :s1
-    assert Raft.leader(:s3) == :s1
+    assert Raft.leader(:s1) == {:s1, node()}
+    assert Raft.leader(:s2) == {:s1, node()}
+    assert Raft.leader(:s3) == {:s1, node()}
 
     # Disconnect the leader from the cluster
     Raft.stop_peer(:s1)

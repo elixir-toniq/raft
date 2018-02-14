@@ -1,4 +1,8 @@
 defmodule Raft.StateMachine.Echo do
+  @moduledoc """
+  A simple state machine that simply echos commands.
+  """ && false
+
   @behaviour Raft.StateMachine
 
   def init(_), do: :ok
