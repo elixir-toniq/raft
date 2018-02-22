@@ -281,7 +281,7 @@ defmodule Raft.Server do
         count = Enum.count(req.entries)
         me = state.me
         indexes = Enum.map(req.entries, & &1.index)
-        "#{me}: Log is consistent. Appending #{count} new entries at indexes: #{inspect indexes}"
+        "#{name(state)}: Log is consistent. Appending #{count} new entries at indexes: #{inspect indexes}"
       end)
 
       {:ok, index} = Log.append(state.me, req.entries)
