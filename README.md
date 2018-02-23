@@ -12,7 +12,7 @@ engines.
 ```elixir
 def deps do
   [
-    {:raft, "~> 0.2.0"},
+    {:raft, "~> 0.2.1"},
   ]
 end
 ```
