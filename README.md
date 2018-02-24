@@ -2,7 +2,7 @@
 
 Raft provides users with an api for building consistent (as defined by CAP),
 distributed state machines. It does this using the raft leader election and
-concensus protocol as described in the [original
+consensus protocol as described in the [original
 paper](https://raft.github.io/raft.pdf). Logs are persisted using rocksdb
 but Raft provides a pluggable storage adapter for utilizing other storage
 engines.
@@ -28,16 +28,16 @@ defmodule KVStore do
 
   @initial_state %{}
 
-  def set(name, key, value) do
+  def write(name, key, value) do
     Raft.write(name, {:set, key, value})
   end
 
-  def get(name, key) do
+  def read(name, key) do
     Raft.read(name, {:get, key})
   end
 
   def init(_name) do
-    {:ok, @initial_state} 
+    @initial_state
   end
 
   def handle_write({:set, key, value}, state) do
@@ -57,46 +57,77 @@ end
 ```
 
 Now we can start our peers. Its important to note that each peer must be
-given a unique name within the cluster.
+given a unique name within the cluster. In this example we'll create
+three codes with shortnames `a`, `b`, and `c`. The Raft peers on these
+nodes are called `peer1`, `peer2`, and `peer3`.,
 
 ```elixir
-{:ok, _pid} = Raft.start_peer(KVStore, name: :s1)
-{:ok, _pid} = Raft.start_peer(KVStore, name: :s2)
-{:ok, _pid} = Raft.start_peer(KVStore, name: :s3)
+$ iex --sname a -S mix
+iex(a@mymachine)> {:ok, _pid} = Raft.start_peer(KVStore, name: :peer1)
+
+$ iex --sname b -S mix
+iex(b@mymachine)> {:ok, _pid} = Raft.start_peer(KVStore, name: :peer2)
+
+$ iex --sname c -S mix
+iex(c@mymachine)> {:ok, _pid} = Raft.start_peer(KVStore, name: :peer3)
 ```
 
 At this point our peers are started but currently they're all in the
 "follower" state. In order to get them to communicate we need to define
-a cluster configuration for them like so:
+a cluster configuration for them like so. This needs to be done on
+only one of the nodes. In our case, we'll run it on node `a`.
 
 ```elixir
-Raft.set_configuration(:s1, [:s1, :s2, :s3])
+iex(a@mymachine)> Raft.set_configuration(:peer1,
+            ...> [{ :peer1, :a@mymachine },
+            ...>  { :peer2, :b@mymachine },
+            ...>  { :peer3, :c@mymachine }]
 ```
+
+Notice that we have to give both the peer name and the node name, even
+for the local peer. That's because we store this configuration in the
+replicated logs, and so they must make sense from all our nodes.
 
 Once this command runs the peers will start an election and elect
 a leader. You can see who the current leader is by running:
 
 ```elixir
-leader = Raft.leader(:s1)
+leader = Raft.leader(:peer1)
 ```
 
 Once we have the leader we can read and write to our state machine:
 
 ```elixir
 {:ok, :foo, :bar} = KVStore.write(leader, :foo, :bar)
-{:ok, :bar} = KVStore.read(leader, :foo)
-{:error, :key_not_found} = KVStore.get(leader, :baz)
+{:ok, :bar}       = KVStore.read(leader, :foo)
+{:error, :key_not_found} = KVStore.read(leader, :baz)
 ```
 
 We can now shutdown our leader and ensure that a new leader has been
 elected and our state is replicated across all of our peers:
 
 ```elixir
-Raft.stop(leader)
+iex(a@mymachine)> Raft.stop(leader)
+```
 
-# wait for election...
+Try to use the old leader:
 
-new_leader = Raft.leader(:s2)
+```elixir
+iex(a@mymachine)> KVStore.read(leader, :foo)
+{ :error, { :redirect, { :peer3, :c@mymachine }}}
+```
+
+We're told that the leader has changed.
+
+``` elixir
+iex(b@mymachine)> new_leader = Raft.leader(:peer2)
+# or
+new_leader = { :peer3, :c@mymachine }
+```
+
+And use it:
+
+``` elixirt
 {:ok, :bar} = KVStore.read(new_leader, :foo)
 ```
 
@@ -121,4 +152,3 @@ immediate needs.
 * [ ] - Snapshotting
 * [ ] - Alternative storage engine using lmdb
 * [ ] - Jepsen testing
-
