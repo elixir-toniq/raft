@@ -41,8 +41,36 @@ defmodule Raft.StateMachine do
   @callback handle_read(cmd(), state()) :: val() | {val(), state()}
 
   defmacro __using__(_) do
+    caller = __CALLER__.module
     quote location: :keep do
       @behaviour unquote(__MODULE__)
+
+      def child_spec(args) do
+        app = Application.get_application(unquote(caller))
+        name = Keyword.get(args, :name, unquote(caller))
+        data_dir =
+          case Keyword.get(args, :data_dir) do
+            nil ->
+              # Default to a unique data dir for each node and state machine
+              node_str = "#{Node.self}"
+              root_dir = Application.app_dir(app, "data")
+              Path.join([root_dir, node_str, "#{name}"])
+            dir ->
+              dir
+          end
+        File.mkdir_p!(data_dir)
+        new_args =
+          args
+          |> Keyword.put(:name, name)
+          |> Keyword.put(:data_dir, data_dir)
+        config = Raft.Config.new(new_args)
+        new_args = Keyword.put(new_args, :config, config)
+        %{id: unquote(caller),
+          start: {Raft, :start_peer, [unquote(caller), new_args]},
+          type: :worker}
+      end
+
+      defoverridable [child_spec: 1]
     end
   end
 end
