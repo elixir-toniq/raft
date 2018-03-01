@@ -72,7 +72,14 @@ $ iex --sname c -S mix
 iex(c@mymachine)> {:ok, _pid} = Raft.start_peer(KVStore, name: :peer3)
 ```
 
-At this point our peers are started but currently they're all in the
+Raft currently prints a lot of debug info; to quiet this, you can
+limit logger's level in `config.exs` like so:
+
+``` elixir
+config :logger, level: :warn
+```
+
+At this point our peers are started, but currently they're all in the
 "follower" state. In order to get them to communicate we need to define
 a cluster configuration for them like so. This needs to be done on
 only one of the nodes. In our case, we'll run it on node `a`.
@@ -98,17 +105,25 @@ leader = Raft.leader(:peer1)
 Once we have the leader we can read and write to our state machine:
 
 ```elixir
-{:ok, :foo, :bar} = KVStore.write(leader, :foo, :bar)
-{:ok, :bar}       = KVStore.read(leader, :foo)
-{:error, :key_not_found} = KVStore.read(leader, :baz)
+{:ok, {:ok, :foo, :bar}} = KVStore.write(leader, :foo, :bar)
+{:ok, {:ok, :bar}}       = KVStore.read(leader, :foo)
+{:ok, {:error, :key_not_found}} = KVStore.read(leader, :baz)
 ```
 
-We can now shutdown our leader and ensure that a new leader has been
-elected and our state is replicated across all of our peers:
+Let's review the status of the peer:
+
+``` elixir
+Raft.status(:peer1)
+```
+
+We can now shut down our leader and ensure that a new leader has been
+elected, and our state is replicated across all of our peers:
 
 ```elixir
-iex(a@mymachine)> Raft.stop(leader)
+iex(a@mymachine)> Raft.stop_peer(leader)
 ```
+
+We can verify this by again checking `Raft.status(:peer1)`.
 
 Try to use the old leader:
 
