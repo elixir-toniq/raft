@@ -12,7 +12,7 @@ defmodule Raft.Support.Applier do
   end
 
   def stop_applying(pid) do
-    GenServer.call(pid, :stop_applying)
+    GenServer.call(pid, :stop_applying, 20_000)
   end
 
   def init({cluster, generator}) do

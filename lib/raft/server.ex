@@ -651,7 +651,7 @@ defmodule Raft.Server do
   defp read_and_send(%{state_machine: sm, state_machine_state: sms}=state, reqs) do
     new_state = Enum.reduce reqs, sms, fn req, s ->
       {result, new_state} = sm.handle_read(req.cmd, s)
-      respond_to_client(req, {:ok, result})
+      respond_to_client(req, result)
       new_state
     end
 
@@ -757,8 +757,9 @@ defmodule Raft.Server do
 
   defp seq(a, b), do: :lists.seq(a, b)
 
-  defp commit_entries(leader_commit, %{commit_index: commit_index}=state)
-                                   when commit_index >= leader_commit, do: state
+  defp commit_entries(leader_commit, %{commit_index: commit_index}=state) when commit_index >= leader_commit do
+    state
+  end
 
   # Starting at the last known index and working towards the new last index
   # apply each log to the state machine
@@ -782,7 +783,7 @@ defmodule Raft.Server do
 
       {:ok, %{type: :command, data: cmd}=log} ->
         {result, new_sms} = apply_log_to_state_machine(state, cmd)
-        reqs = respond_to_client_requests(state, log, {:ok, result})
+        reqs = respond_to_client_requests(state, log, result)
         %{state | state_machine_state: new_sms, client_reqs: reqs}
 
       {:ok, %{type: :config, data: %{state: :stable}}=log} ->
