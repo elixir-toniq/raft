@@ -127,7 +127,7 @@ new_leader = { :peer3, :c@mymachine }
 
 And use it:
 
-``` elixirt
+``` elixir
 {:ok, :bar} = KVStore.read(new_leader, :foo)
 ```
 
