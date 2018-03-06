@@ -10,23 +10,23 @@ defmodule Raft.StateMachine.Stack do
   end
 
   def handle_read(:length, stack) do
-    {Enum.count(stack), stack}
+    {{:ok, Enum.count(stack)}, stack}
   end
 
   def handle_read(:all, stack) do
-    {stack, stack}
+    {{:ok, stack}, stack}
   end
 
   def handle_write({:put, item}, stack) do
     new_stack = [item | stack]
-    {Enum.count(new_stack), new_stack}
+    {{:ok, Enum.count(new_stack)}, new_stack}
   end
 
   def handle_write(:pop, [item | stack]) do
-    {item, stack}
+    {{:ok, item}, stack}
   end
 
   def handle_write(:pop, []) do
-    {:empty, []}
+    {{:ok, :empty}, []}
   end
 end
