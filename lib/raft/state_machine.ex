@@ -59,15 +59,15 @@ defmodule Raft.StateMachine do
               dir
           end
         File.mkdir_p!(data_dir)
-        new_args =
+        config =
           args
           |> Keyword.put(:name, name)
           |> Keyword.put(:data_dir, data_dir)
-        config = Raft.Config.new(new_args)
-        new_args = Keyword.put(new_args, :config, config)
-        %{id: unquote(caller),
-          start: {Raft, :start_peer, [unquote(caller), new_args]},
-          type: :worker}
+          |> Raft.Config.new()
+          |> Map.put(:state_machine, unquote(caller))
+        peer_name = {name, Node.self}
+        child_id = {Raft.PeerSupervisor, name}
+        Supervisor.child_spec({Raft.PeerSupervisor, {peer_name, config}}, id: child_id)
       end
 
       defoverridable [child_spec: 1]

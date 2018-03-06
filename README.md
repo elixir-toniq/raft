@@ -56,6 +56,29 @@ defmodule KVStore do
 end
 ```
 
+You can automatically start a peer as part of your supervision tree as shown below. As shown here,
+when the supervisor starts, a new peer will be started with the given name. You can provide additional
+options and they will be used to customize the default config for the peer, for example, you can change
+the data directory with the `:data_dir` option.
+
+```elixir
+defmodule KVStoreSupervisor do
+  use Supervisor
+  
+  def start_link(args), do: Supervisor.start_link(__MODULE__, name: __MODULE__)
+  
+  def init(_args) do
+    children = [
+      {KVStore, [name: :"kvstore_#{Node.self}"]}
+    ]
+    Supervisor.init(children, strategy: :one_for_one)
+  end
+end
+```
+
+For the rest of this example however, we will assume you are manually starting/configuring
+peers with `Raft.start_peer/2`, rather than starting them as part of your supervision tree.
+
 Now we can start our peers. Its important to note that each peer must be
 given a unique name within the cluster. In this example we'll create
 three codes with shortnames `a`, `b`, and `c`. The Raft peers on these

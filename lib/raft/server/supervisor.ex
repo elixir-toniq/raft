@@ -24,8 +24,17 @@ defmodule Raft.Server.Supervisor do
       |> PeerSupervisor.sup_name
       |> Process.whereis
 
+    children = DynamicSupervisor.which_children(__MODULE__)
+
     if pid do
-      DynamicSupervisor.terminate_child(__MODULE__, pid)
+      case List.keyfind(children, pid, 1) do
+        nil ->
+          # This was not started via `start_peer`, tell the supervisor
+          # to shut itself down instead
+          Supervisor.stop(pid)
+        _child ->
+          DynamicSupervisor.terminate_child(__MODULE__, pid)
+      end
     else
       {:error, :no_peer}
     end
