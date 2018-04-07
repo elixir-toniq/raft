@@ -7,7 +7,7 @@ defmodule Raft.PeerSupervisor do
     Supervisor.start_link(__MODULE__, {name, config}, name: sup_name(name))
   end
 
-  @spec sup_name(Raft.peer()) :: String.t
+  @spec sup_name(Raft.peer()) :: atom()
   def sup_name({name, _}) do
     sup_name(name)
   end

@@ -78,6 +78,7 @@ defmodule RaftTest do
   end
 
   @tag :focus
+  @tag :capture_log
   test "leader failure" do
     # Start all nodes
     {:ok, _s1} = Raft.start_peer(Stack, name: :s1)

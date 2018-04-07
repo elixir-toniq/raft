@@ -5,6 +5,7 @@ defmodule Raft.Application do
 
   def start(_type, _args) do
     children = [
+      {Task.Supervisor, name: Raft.RPC.Supervisor},
       Raft.Server.Supervisor,
     ]
 
