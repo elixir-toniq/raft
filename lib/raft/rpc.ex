@@ -70,23 +70,25 @@ defmodule Raft.RPC do
   """
   @spec send_msg(msg()) :: pid()
 
-  def send_msg(%{from: from, to: to}=rpc) do
-    spawn fn ->
-      to
-      |> Server.to_server
-      |> GenStateMachine.call(rpc)
-      |> case do
-        %AppendEntriesResp{}=resp ->
-          GenStateMachine.cast(from, resp)
+  def send_msg(rpc) do
+    Task.Supervisor.start_child(Raft.RPC.Supervisor, fn -> do_send(rpc) end)
+  end
 
-        %RequestVoteResp{}=resp ->
-          GenStateMachine.cast(from, resp)
+  defp do_send(%{from: from, to: to}=rpc) do
+    to
+    |> Server.to_server
+    |> GenStateMachine.call(rpc)
+    |> case do
+      %AppendEntriesResp{}=resp ->
+        GenStateMachine.cast(from, resp)
 
-        error ->
-          Logger.error fn ->
-            "Error: #{inspect error} sending #{inspect rpc} to #{to} from #{from}"
-          end
-      end
+      %RequestVoteResp{}=resp ->
+        GenStateMachine.cast(from, resp)
+
+      error ->
+        Logger.error fn ->
+          "Error: #{inspect error} sending #{inspect rpc} to #{to} from #{from}"
+        end
     end
   end
 end

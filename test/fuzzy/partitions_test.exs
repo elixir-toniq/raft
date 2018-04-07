@@ -2,6 +2,8 @@ defmodule Raft.Fuzzy.PartitionsTest do
   use ExUnit.Case, async: false
   import StreamData
 
+  @moduletag :capture_log
+
   alias Raft.Support.{
     Applier,
     Cluster,
