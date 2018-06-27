@@ -32,6 +32,7 @@ defmodule Raft.Server.Supervisor do
           # This was not started via `start_peer`, tell the supervisor
           # to shut itself down instead
           Supervisor.stop(pid)
+
         _child ->
           DynamicSupervisor.terminate_child(__MODULE__, pid)
       end

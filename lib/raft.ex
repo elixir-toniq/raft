@@ -5,7 +5,7 @@ defmodule Raft do
   protocol as described in the [original paper](https://raft.github.io/raft.pdf).
 
   ## Example
-  
+
   Lets create a distributed key value store. The first thing that we'll need is
   a state machine:
 
@@ -108,18 +108,27 @@ defmodule Raft do
   to ensure that messages don't "poison" the log and state machine.
 
   ## Log Storage
-  
+
   The log and metadata store is persisted to disk using rocksdb. This allows us
   to use a well known and well supported db engine that also does compaction.
   The log store is built as an adapter so its possible to construct other adapters
   for persistence.
-  
+
+  ## Operations
+
+  ### Forceful override
+
+  It may be desirable to initialize a server, copy its log
+  file to other servers, set the database id for each follower, and then add
+  them to the cluster using the add_server rpc methods. This circumvents expensive
+  install snapshot calls.
+
   ## Protocol Overview
 
   Raft is a complex protocol and all of the details won't be covered here.
   This is an attempt to cover the high level topics so that users can make more
   informed technical decisions.
-  
+
   Key Terms:
 
   * Cluster - A group of peers. These peers must be explicitly set.
@@ -202,6 +211,25 @@ defmodule Raft do
   """
   def stop_peer(name) do
     Raft.Server.Supervisor.stop_peer(name)
+  end
+
+  @doc """
+  Initializes a new cluster. Under normal operations this should be the first
+  command issued to create a new cluster. Once this operation is run the server
+  will be the first server in a new cluster. It will transition to a follower
+  state and then immediately elect itself as the leader. This command will block
+  until server has declared itself the leader.
+
+  This operation can be called on any server regardless of if that server is
+  already part of an existing cluster. If the server already contains log
+  data then these data will be preserved. But a new, unique database id
+  will be created. This means that the server will no longer be able to
+  communicate with the other servers despite sharing the original log index and
+  terms. This may be necessary in the event that a majority of servers are
+  irrevocably lost and an administrator needs to start healing the cluster.
+  """
+  def initialize_cluster(server, timeout \\ 3_000) do
+    Raft.Server.initialize_cluster(server, UUID.uuid4(), timeout)
   end
 
   @doc """

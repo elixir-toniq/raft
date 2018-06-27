@@ -21,6 +21,7 @@ defmodule Raft.Log do
   @type metadata :: %{
     term: non_neg_integer(),
     voted_for: atom() | nil,
+    database_id: binary() | nil,
   }
 
   def start_link([name, config]) do
@@ -71,6 +72,10 @@ defmodule Raft.Log do
 
   def set_metadata(name, candidate, term) do
     call(name, {:set_metadata, candidate, term})
+  end
+
+  def set_metadata(name, meta) do
+    call(name, {:set_metadata, meta})
   end
 
   @doc """
@@ -169,9 +174,14 @@ defmodule Raft.Log do
   end
 
   def handle_call({:set_metadata, cand, term}, _from, state) do
-    metadata = %Metadata{voted_for: cand, term: term}
+    metadata = %{state.metadata | voted_for: cand, term: term}
     :ok = LogStore.store_metadata(state.log_store, metadata)
     {:reply, :ok, %{state | metadata: metadata}}
+  end
+
+  def handle_call({:set_metadata, meta}, _from, state) do
+    :ok = LogStore.store_metadata(state.log_store, meta)
+    {:reply, :ok, %{state | metadata: meta}}
   end
 
   def handle_call(:get_configuration, _from, %{configuration: config}=state) do

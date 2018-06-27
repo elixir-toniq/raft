@@ -17,12 +17,18 @@ defmodule Raft.Log.Metadata do
   @type voted_for :: :none | atom()
 
   @typedoc """
+  The database id for this cluster.
+  """
+  @type database_id :: binary() | nil
+
+  @typedoc """
   Metadata struct.
   """
   @type t :: %__MODULE__{
     term: current_term(),
     voted_for: voted_for(),
+    database_id: database_id(),
   }
 
-  defstruct term: 0, voted_for: :none
+  defstruct term: 0, voted_for: :none, database_id: nil
 end

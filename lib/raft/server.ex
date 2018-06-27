@@ -105,6 +105,22 @@ defmodule Raft.Server do
   end
 
   @doc """
+  Returns the database id for this server.
+  """
+  def get_database_id(server) do
+    GenStateMachine.call(server, :get_database_id)
+  end
+
+  @doc """
+  Initializes a new cluster with this server as the leader.
+  """
+  def initialize_cluster(server, uuid \\ UUID.uuid4(), timeout \\ 3000) do
+    GenStateMachine.call(server, {:initialize_cluster, uuid}, timeout)
+  end
+
+  # Callbacks
+
+  @doc """
   Initializes the state of the server.
   If log files already exist for this server name then it reads from those
   files to get the current configuration, term, etc.
@@ -215,6 +231,7 @@ defmodule Raft.Server do
         ))
         new_state = become_candidate(state)
         {:next_state, :candidate, new_state}
+
       false ->
         Logger.debug(fmt(state, :follower, "Skipping until we have a vote"))
         state = reset_timeout(state)
@@ -226,33 +243,33 @@ defmodule Raft.Server do
   # We can set the configuration if we're in follower state and we have no
   # configuration (which means the log is empty). This is so we can
   # bootstrap a new server.
-  def follower({:call, from}, {:set_configuration, {id, peers}},
-                              %{configuration: %{state: :none}}=state) do
-    Logger.debug(fmt(state, :follower, "Setting initial configuration"))
+  # def follower({:call, from}, {:set_configuration, {id, peers}},
+  #                             %{configuration: %{state: :none}}=state) do
+  #   Logger.debug(fmt(state, :follower, "Setting initial configuration"))
 
-    case Enum.member?(peers, state.me) do
-      true ->
-        config = Configuration.reconfig(state.configuration, peers)
-        followers = Configuration.followers(config, state.me)
-        new_state = %{state |
-          followers: followers,
-          configuration: config,
-          init_config: {id, from}
-        }
-        {:next_state, :candidate, new_state}
+  #   case Enum.member?(peers, state.me) do
+  #     true ->
+  #       config = Configuration.reconfig(state.configuration, peers)
+  #       followers = Configuration.followers(config, state.me)
+  #       new_state = %{state |
+  #         followers: followers,
+  #         configuration: config,
+  #         init_config: {id, from}
+  #       }
+  #       {:next_state, :candidate, new_state}
 
-      false ->
-        rpy = {:reply, from, {:error, :must_be_in_consesus_group}}
-        {:keep_state_and_data, [rpy]}
-    end
-  end
+  #     false ->
+  #       rpy = {:reply, from, {:error, :must_be_in_consesus_group}}
+  #       {:keep_state_and_data, [rpy]}
+  #   end
+  # end
 
-  def follower({:call, from}, {:set_configuration, _change}, state) do
-    Logger.warn(fmt(state, :follower,
-      "Can't set config on a follower that already has a configuration"
-    ))
-    {:keep_state_and_data, [{:reply, from, {:error, {:redirect, state.leader}}}]}
-  end
+  # def follower({:call, from}, {:set_configuration, _change}, state) do
+  #   Logger.warn(fmt(state, :follower,
+  #     "Can't set config on a follower that already has a configuration"
+  #   ))
+  #   {:keep_state_and_data, [{:reply, from, {:error, {:redirect, state.leader}}}]}
+  # end
 
   # Leader has a lower term then us
   def follower({:call, from}, %AppendEntriesReq{term: term},
@@ -336,10 +353,21 @@ defmodule Raft.Server do
     {:next_state, :candidate, state}
   end
 
+  # If we get a timeout then we can check to see if we've won the election
+  # without receiving rpcs. This would only happen in the event that the server
+  # is the only server in the cluster such as after initializing a new cluster.
   def candidate(:info, :timeout, state) do
-    Logger.warn("#{name(state)}: Timeout reached. Re-starting Election")
+    Logger.warn("#{name(state)}: Timeout reached. Checking votes...")
 
-    {:next_state, :candidate, become_candidate(state)}
+    if State.majority?(state) do
+        Logger.info("#{name(state)}: Election won which means the cluster was initialized.")
+
+        {:next_state, :leader, become_leader(state)}
+    else
+      Logger.warn("#{name(state)}: Restarting election")
+      {:next_state, :candidate, become_candidate(state)}
+    end
+
   end
 
   def candidate({:call, from}, {:set_configuration, _change}, _state) do
@@ -432,6 +460,21 @@ defmodule Raft.Server do
     }
 
     {:keep_state_and_data, [{:reply, from, status}]}
+  end
+
+  def handle_event({:call, from}, :get_database_id, _current_state, state) do
+    %{database_id: db_id} = Log.get_metadata(state.me)
+    {:keep_state_and_data, [{:reply, from, db_id}]}
+  end
+
+  def handle_event({:call, from}, {:initialize_cluster, id}, _current_state, data) do
+    metadata = Log.get_metadata(data.me)
+    configuration = Configuration.reconfig(data.configuration, [data.me])
+    entry = Entry.configuration(data.current_term, data.configuration)
+    {:ok, last_index} = Log.append(data.me, [entry])
+    data = %{data | init_config: {id, from}}
+    Log.set_metadata(data.me, %{metadata | database_id: UUID.uuid4})
+    {:next_state, :follower, %{data | configuration: configuration}, []}
   end
 
   def handle_event(event_type, event, state, _data) do
@@ -721,6 +764,7 @@ defmodule Raft.Server do
         entry = Entry.configuration(state.current_term, state.configuration)
         state = append(state, id, from, entry)
         send_append_entries(state)
+        respond_to_client(from, id)
         %{state | init_config: :complete}
 
       :undefined ->
@@ -806,6 +850,9 @@ defmodule Raft.Server do
   end
 
   defp respond_to_client(%{from: from}, rpy) do
+    GenStateMachine.reply(from, rpy)
+  end
+  defp respond_to_client(from, rpy) do
     GenStateMachine.reply(from, rpy)
   end
 
