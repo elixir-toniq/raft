@@ -5,7 +5,7 @@ defmodule Raft do
   protocol as described in the [original paper](https://raft.github.io/raft.pdf).
 
   ## Example
-  
+
   Lets create a distributed key value store. The first thing that we'll need is
   a state machine:
 
@@ -108,18 +108,18 @@ defmodule Raft do
   to ensure that messages don't "poison" the log and state machine.
 
   ## Log Storage
-  
+
   The log and metadata store is persisted to disk using rocksdb. This allows us
   to use a well known and well supported db engine that also does compaction.
   The log store is built as an adapter so its possible to construct other adapters
   for persistence.
-  
+
   ## Protocol Overview
 
   Raft is a complex protocol and all of the details won't be covered here.
   This is an attempt to cover the high level topics so that users can make more
   informed technical decisions.
-  
+
   Key Terms:
 
   * Cluster - A group of peers. These peers must be explicitly set.
@@ -202,6 +202,13 @@ defmodule Raft do
   """
   def stop_peer(name) do
     Raft.Server.Supervisor.stop_peer(name)
+  end
+
+  @doc """
+  Initialize a new cluster
+  """
+  def initialize_cluster(name) do
+    Raft.Server.initialize_cluster(name)
   end
 
   @doc """

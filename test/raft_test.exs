@@ -28,11 +28,26 @@ defmodule RaftTest do
     :ok
   end
 
+  describe "initialize cluster" do
+    test "creates a new cluster with a single server" do
+      {:ok, _s1} = Raft.start_peer(Stack, name: :s1)
+      {:ok, _database_id} = Raft.initialize_cluster(:s1)
+
+      _ = wait_for_election([:s1])
+
+      assert Raft.leader(:s1) == {:s1, node()}
+    end
+
+    test "it retains the current term and log on the server" do
+      flunk "Not implemented"
+    end
+  end
+
   test "starting a cluster" do
     # Start each node individually with no configuration. Each node will
     # come up as a follower and remain there since they have no known
     # configuration yet.
-    {:ok, _s1} = Raft.start_peer(Stack, name: :s1)
+    {:ok, _s2} = Raft.start_peer(Stack, name: :s1)
     {:ok, _s2} = Raft.start_peer(Stack, name: :s2)
     {:ok, _s3} = Raft.start_peer(Stack, name: :s3)
 

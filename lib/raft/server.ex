@@ -3,8 +3,6 @@ defmodule Raft.Server do
   The Server module provides the raft fsm.
   """
 
-  use GenStateMachine, callback_mode: :state_functions
-
   alias Raft.{
     Log,
     Log.Entry,
@@ -33,6 +31,8 @@ defmodule Raft.Server do
 
   @initial_state %State{}
 
+  def callback_mode, do: [:state_functions, :state_enter]
+
   @doc """
   This defines the child spec correctly
   """
@@ -52,14 +52,25 @@ defmodule Raft.Server do
   def start_link({name, config}) do
     case name do
       {me, _} ->
-        GenStateMachine.start_link(__MODULE__, {:follower, name, config}, [name: me])
+        :gen_statem.start_link({:local, me}, __MODULE__, {:follower, name, config}, [])
+
       ^name ->
-        GenStateMachine.start_link(__MODULE__, {:follower, name, config}, [name: name])
+        :gen_statem.start_link({:local, name}, __MODULE__, {:follower, name, config}, [])
     end
   end
 
   def set_configuration(peer, configuration) do
-    GenStateMachine.call(peer, {:set_configuration, configuration})
+    :gen_statem.call(peer, {:set_configuration, configuration})
+  end
+
+  @doc """
+  Creates a new cluster with a single server. Any existing logs or current term
+  will be preserved however a new database id will be created for this cluster.
+  If this is called on an existing server that server will be considered a new
+  cluster and will no longer be able to communicate with its previous peers.
+  """
+  def initialize_cluster(peer) do
+    :gen_statem.call(peer, :initialize_cluster)
   end
 
   @doc """
@@ -69,7 +80,7 @@ defmodule Raft.Server do
   # @spec apply(server(), term()) :: :ok | {:error, :timeout} | {:error, :not_leader}
 
   def write(peer, cmd, timeout \\ 3_000) do
-    GenStateMachine.call(peer, {:write, cmd}, timeout)
+    :gen_statem.call(peer, {:write, cmd}, timeout)
   end
 
   @doc """
@@ -79,7 +90,7 @@ defmodule Raft.Server do
   as described in the raft paper, section 8: Client Interaction.
   """
   def read(peer, cmd, timeout \\ 3_000) do
-    GenStateMachine.call(peer, {:read, cmd}, timeout)
+    :gen_statem.call(peer, {:read, cmd}, timeout)
   end
 
   @doc """
@@ -91,7 +102,7 @@ defmodule Raft.Server do
   @spec current_leader(atom()) :: atom()
 
   def current_leader(server) do
-    status = GenStateMachine.call(server, :status)
+    status = :gen_statem.call(server, :status)
     status[:leader]
   end
 
@@ -101,7 +112,7 @@ defmodule Raft.Server do
   @spec status(pid()) :: status()
 
   def status(sm) do
-    GenStateMachine.call(sm, :status)
+    :gen_statem.call(sm, :status)
   end
 
   @doc """
@@ -121,6 +132,7 @@ defmodule Raft.Server do
       config: config,
       current_term: current_term,
       configuration: configuration,
+      database_id: nil
     }
 
     Logger.info(fmt(state, :follower, "State has been restored"), [server: name])
@@ -131,70 +143,102 @@ defmodule Raft.Server do
   # Leader callbacks
   #
 
+  # Entering the leader state
+  def leader(:enter, old_state, data) do
+    Logger.info(fmt(data, :leader, "Becoming leader"))
+    index = Log.last_index(data.me)
+    next_index = initial_indexes(data, index+1)
+    match_index = initial_indexes(data, 0)
+    data = %{data | next_index: next_index, match_index: match_index}
+    data = %{data | leader: data.me}
+
+    case data.init_config do
+      {id, from} ->
+        Logger.debug("#{name(data)}: Becoming leader with initial config")
+        entry = Entry.configuration(data.current_term, data.configuration)
+        data = append(data, id, from, entry)
+        send_append_entries(data)
+        %{data | init_config: :complete}
+
+      :undefined ->
+        entry = Entry.noop(data.current_term)
+        data = append(data, entry)
+        %{data | init_config: :complete}
+
+      :complete ->
+        entry = Entry.noop(data.current_term)
+        append(data, entry)
+    end
+
+    {:keep_state, data, [{:state_timeout, heartbeat_timeout(), :heartbeat}]}
+  end
+
   # Write new entries to the log and replicate
-  def leader({:call, from}, {:write, {id, cmd}}, state) do
-    state = reset_timeout(heartbeat_timeout(), state)
-    Logger.info(fmt(state, :leader, "Writing new command to log"))
+  def leader({:call, from}, {:write, {id, cmd}}, data) do
+    Logger.info(fmt(data, :leader, "Writing new command to log"))
 
-    entry = Entry.command(state.current_term, cmd)
-    {:ok, last_index} = Log.append(state.me, [entry])
-    new_match_index = Map.put(state.match_index, state.me, last_index)
-    state = %{state | match_index: new_match_index}
-    send_append_entries(state)
-    state = add_client_req(state, id, from, last_index)
-    {:next_state, :leader, state, []}
+    entry = Entry.command(data.current_term, cmd)
+    {:ok, last_index} = Log.append(data.me, [entry])
+    new_match_index = Map.put(data.match_index, data.me, last_index)
+    data = %{data | match_index: new_match_index}
+    send_append_entries(data)
+    data = add_client_req(data, id, from, last_index)
+
+    {:keep_state, data}
   end
 
-  def leader({:call, from}, {:read, {id, cmd}}, state) do
-    Logger.info(fmt(state, :leader, "Leader received read request"))
-    state = add_read_req(state, id, from, cmd)
-    send_append_entries(state)
-    {:next_state, :leader, reset_timeout(heartbeat_timeout(), state)}
+  # Process read requests by first ensuring that we're still the leader.
+  def leader({:call, from}, {:read, {id, cmd}}, data) do
+    Logger.info(fmt(data, :leader, "Leader received read request"))
+    data = add_read_req(data, id, from, cmd)
+    send_append_entries(data)
+
+    {:keep_state, data}
   end
 
-  def leader(:info, :timeout, state) do
-    Logger.debug(fmt(state, :leader, "Sending heartbeats"))
+  def leader(:state_timeout, :heartbeat, data) do
+    Logger.debug(fmt(data, :leader, "Sending heartbeats"))
 
-    send_append_entries(state)
-    {:next_state, :leader, reset_timeout(heartbeat_timeout(), state)}
+    send_append_entries(data)
+    {:keep_state_and_data, [{:state_timeout, heartbeat_timeout(), :heartbeat}]}
   end
 
   # We're out of date so step down
   def leader(:cast, %AppendEntriesResp{success: false, term: term},
-                    %{current_term: current_term}=state) when term > current_term do
-    Logger.warn(fmt(state, :leader, "Out of date, stepping down as leader"))
+                    %{current_term: current_term}=data) when term > current_term do
+    Logger.warn(fmt(data, :leader, "Out of date, stepping down as leader"))
 
-    {:next_state, :follower, %{state | current_term: term}, []}
+    {:next_state, :follower, %{data | current_term: term}}
   end
 
   # Follower needs to be caught up so decrement the followers next index.
   # The next time a heartbeat times out we will send them all of the entries
   # and hopefully catch them up. If they aren't then we try again.
-  def leader(:cast, %AppendEntriesResp{success: false, from: from}, state) do
-    next_index = Map.update!(state.next_index, from, & &1-1)
+  def leader(:cast, %AppendEntriesResp{success: false, from: from}, data) do
+    next_index = Map.update!(data.next_index, from, & &1-1)
     Logger.warn(
-      fmt(state, :leader, "#{name(from)} is out of date. Decrementing index to #{next_index[from]}"))
+      fmt(data, :leader, "#{name(from)} is out of date. Decrementing index to #{next_index[from]}"))
 
-    {:next_state, :leader, %{state | next_index: next_index}}
+    {:next_state, :leader, %{data | next_index: next_index}}
   end
 
   # Stale reply so ignore it
   def leader(:cast, %AppendEntriesResp{success: true, term: term},
-                    %{current_term: current_term}=state) when current_term > term do
-    Logger.debug(fmt(state, :leader, "Stale reply"))
-    {:keep_state_and_data, []}
+                    %{current_term: current_term}=data) when current_term > term do
+    Logger.debug(fmt(data, :leader, "Stale reply"))
+    :keep_state_and_data
   end
 
   # Succeeded to replicate to follower
-  def leader(:cast, %AppendEntriesResp{success: true, from: from, index: index}, state) do
-    Logger.debug(fmt(state, :leader, "Successfully replicated index #{index} to #{name(from)}"))
-    match_index = Map.put(state.match_index, from, index)
-    next_index = Map.put(state.next_index, from, index+1)
-    state = %{state | match_index: match_index, next_index: next_index}
-    state = maybe_commit_logs(state)
-    state = maybe_send_read_replies(state)
+  def leader(:cast, %AppendEntriesResp{success: true, from: from, index: index}, data) do
+    Logger.debug(fmt(data, :leader, "Successfully replicated index #{index} to #{name(from)}"))
+    match_index = Map.put(data.match_index, from, index)
+    next_index = Map.put(data.next_index, from, index+1)
+    data = %{data | match_index: match_index, next_index: next_index}
+    data = maybe_commit_logs(data)
+    data = maybe_send_read_replies(data)
 
-    {:next_state, :leader, state}
+    {:keep_state, data}
   end
 
   def leader(msg, event, data) do
@@ -205,21 +249,26 @@ defmodule Raft.Server do
   # Follower callbacks
   #
 
+  def follower(:enter, old_state, data) do
+    Logger.debug("Becoming a follower from #{old_state}")
+
+    {:keep_state, data, [{:timeout, election_timeout(data), :timeout}]}
+  end
+
   # Timeout has happened so if we have a vote we should become a candidate
   # and start a new election. Otherwise we just wait for a new leader
-  def follower(:info, :timeout, %{configuration: config}=state) do
-    case Configuration.has_vote?(state.me, config) do
+  def follower(:timeout, :timeout, %{configuration: config}=data) do
+    case Configuration.has_vote?(data.me, config) do
       true ->
-        Logger.warn(fmt(state, :follower,
-          "Becoming candidate of term: #{state.current_term+1}"
+        Logger.warn(fmt(data, :follower,
+          "Becoming candidate of term: #{data.current_term+1}"
         ))
-        new_state = become_candidate(state)
-        {:next_state, :candidate, new_state}
+        {:next_state, :candidate, data}
+
       false ->
-        Logger.debug(fmt(state, :follower, "Skipping until we have a vote"))
-        state = reset_timeout(state)
-        state = %{state | leader: :none}
-        {:next_state, :follower, state}
+        Logger.debug(fmt(data, :follower, "Skipping until we have a vote"))
+        data = %{data | leader: :none}
+        {:next_state, :follower, data}
     end
   end
 
@@ -243,7 +292,7 @@ defmodule Raft.Server do
 
       false ->
         rpy = {:reply, from, {:error, :must_be_in_consesus_group}}
-        {:keep_state_and_data, [rpy]}
+        {:next_state, :follower, [rpy]}
     end
   end
 
@@ -251,7 +300,8 @@ defmodule Raft.Server do
     Logger.warn(fmt(state, :follower,
       "Can't set config on a follower that already has a configuration"
     ))
-    {:keep_state_and_data, [{:reply, from, {:error, {:redirect, state.leader}}}]}
+
+    {:next_state, :follower, [{:reply, from, {:error, {:redirect, state.leader}}}]}
   end
 
   # Leader has a lower term then us
@@ -261,13 +311,14 @@ defmodule Raft.Server do
       "Rejected append entries from leader with a lower term"
     ))
     resp = %AppendEntriesResp{from: state.me, term: current_term, success: false}
+
     rpy = {:reply, from, resp}
-    {:keep_state_and_data, [rpy]}
+    {:keep_state_and_data, [rpy, {:timeout, election_timeout(state), :timeout}]}
   end
 
   # Append entries looks good so lets try to save them.
   def follower({:call, from}, %AppendEntriesReq{}=req, state) do
-    state = reset_timeout(state)
+    # state = reset_timeout(state)
     state = set_term(req.term, state)
 
     resp = %AppendEntriesResp{
@@ -289,7 +340,8 @@ defmodule Raft.Server do
       state = commit_entries(req.leader_commit, state)
       state = %{state | leader: req.from, configuration: configuration}
       resp = %{resp | success: true, index: index}
-      {:next_state, :follower, state, [{:reply, from, resp}]}
+
+      {:keep_state, state, [{:reply, from, resp}, {:timeout, election_timeout(state), :timeout}]}
     else
       Logger.warn("#{name(state)}: Our log is inconsistent with the leaders")
       last_index = Log.last_index(state.me)
@@ -301,7 +353,7 @@ defmodule Raft.Server do
         Log.delete_range(state.me, prev, last_index)
       end
 
-      {:next_state, :follower, state, [{:reply, from, resp}]}
+      {:keep_state, state, [{:reply, from, resp}, {:timeout, election_timeout(state), :timeout}]}
     end
   end
 
@@ -327,38 +379,56 @@ defmodule Raft.Server do
   # Candidate callbacks
   #
 
+  # If we're becoming a candidate then we should vote for ourselves and send
+  # out vote requests to all other servers.
+  def candidate(:enter, :follower, data) do
+    data = State.increment_term(data)
+    data = %{data | leader: :none}
+    data = State.add_vote(data, %{vote_granted: true})
+    :ok = vote_for_myself(data)
+
+    data.configuration
+    |> Configuration.followers(data.me)
+    |> Enum.map(request_vote(data))
+    |> RPC.broadcast
+
+    {:keep_state, data, [{:state_timeout, election_timeout(data), :timeout}]}
+  end
+
   # if we can't get a quorum on our initial election we let the client know
   # that there was an error and retry until the nodes come up
-  def candidate(:info, :timeout, %{term: 1, init_config: {_id, from}}=state) do
+  def candidate(:state_timeout, :timeout, %{term: 1, init_config: {_id, from}}=state) do
     Logger.warn("#{name(state)}: Cluster is unreachable for initial configuration")
-    state = reset_timeout(state)
-    GenStateMachine.reply(from, {:error, :peers_not_responding})
+    :gen_statem.reply(from, {:error, :peers_not_responding})
     {:next_state, :candidate, state}
   end
 
-  def candidate(:info, :timeout, state) do
-    Logger.warn("#{name(state)}: Timeout reached. Re-starting Election")
+  # If we get a timeout in an election then re-start the election
+  def candidate(:state_timeout, :timeout, data) do
+    Logger.warn("#{name(data)}: Timeout reached. Re-starting Election")
 
-    {:next_state, :candidate, become_candidate(state)}
+    {:next_state, :candidate, data}
   end
 
+  # Reject any requests to set configuration while we're in the middle of an
+  # election
   def candidate({:call, from}, {:set_configuration, _change}, _state) do
     {:keep_state_and_data, [{:reply, from, {:error, :election_in_progress}}]}
   end
 
   # A peer is trying to become leader. If it has a higher term then we
   # need to step down and become a follower
-  def candidate({:call, from}, %RequestVoteReq{}=req, state) do
+  def candidate({:call, from}, %RequestVoteReq{}=req, data) do
     cond do
-      req.term > state.current_term ->
+      req.term > data.current_term ->
         Logger.warn fn ->
-          "#{name(state)}: Received vote request with higher term: #{req.term}. Ours: #{state.current_term}. Stepping down"
+          "#{name(data)}: Received vote request with higher term: #{req.term}. Ours: #{data.current_term}. Stepping down"
         end
-        step_down(state, req.term)
-        handle_vote(from, req, state)
+        data = step_down(data, req.term)
+        handle_vote(from, req, data)
 
       true ->
-        resp = vote_resp(req.from, state, false)
+        resp = vote_resp(req.from, data, false)
         {:keep_state_and_data, [{:reply, from, resp}]}
     end
   end
@@ -377,7 +447,7 @@ defmodule Raft.Server do
       State.majority?(state) ->
         Logger.info("#{name(state)}: Election won in term #{state.current_term}. Tally: #{state.votes}")
 
-        {:next_state, :leader, become_leader(state)}
+        {:next_state, :leader, state}
 
       true ->
         Logger.warn(
@@ -393,7 +463,7 @@ defmodule Raft.Server do
   def candidate({:call, _from}, %AppendEntriesReq{term: term},
                 %{current_term: our_term}=state) when term >= our_term do
     Logger.debug("#{name(state)}: Received append entries. Stepping down")
-    step_down(state, term)
+    state = step_down(state, term)
     {:next_state, :follower, state, []}
   end
 
@@ -434,6 +504,13 @@ defmodule Raft.Server do
     {:keep_state_and_data, [{:reply, from, status}]}
   end
 
+  def handle_event({:call, from}, :initialize_cluster, _, data) do
+    database_id = UUID.uuid4()
+    data = %{data | database_id: database_id}
+
+    {:next_state, :follower, data, [{:reply, from, database_id}]}
+  end
+
   def handle_event(event_type, event, state, _data) do
     Logger.debug(fn ->
       "Unhandled event, #{inspect event_type}, #{inspect event}, #{inspect state}"
@@ -447,12 +524,11 @@ defmodule Raft.Server do
   defp step_down(state, term) do
     state = %{state | current_term: term, leader: :none}
     Log.set_metadata(state.me, :none, term)
-    reset_timeout(state)
+    state
   end
 
   defp handle_vote(from, req, state) do
     Logger.debug("Getting a vote request")
-    state        = reset_timeout(state)
     state        = set_term(req.term, state)
     metadata     = Log.get_metadata(state.me)
     vote_granted = vote_granted?(req, metadata, state)
@@ -692,48 +768,6 @@ defmodule Raft.Server do
     end
   end
 
-  defp become_candidate(state) do
-    state = State.increment_term(state)
-    state = %{state | leader: :none}
-    state = State.add_vote(state, %{vote_granted: true})
-    :ok = vote_for_myself(state)
-
-    state.configuration
-    |> Configuration.followers(state.me)
-    |> Enum.map(request_vote(state))
-    |> RPC.broadcast
-
-    reset_timeout(state)
-  end
-
-  # TODO - Clean all this nonsense up
-  defp become_leader(state) do
-    index = Log.last_index(state.me)
-    next_index = initial_indexes(state, index+1)
-    match_index = initial_indexes(state, 0)
-    state = %{state | next_index: next_index, match_index: match_index}
-    state = %{state | leader: state.me}
-    state = reset_timeout(heartbeat_timeout(), state)
-
-    case state.init_config do
-      {id, from} ->
-        Logger.debug("#{name(state)}: Becoming leader with initial config")
-        entry = Entry.configuration(state.current_term, state.configuration)
-        state = append(state, id, from, entry)
-        send_append_entries(state)
-        %{state | init_config: :complete}
-
-      :undefined ->
-        entry = Entry.noop(state.current_term)
-        state = append(state, entry)
-        %{state | init_config: :complete}
-
-      :complete ->
-        entry = Entry.noop(state.current_term)
-        append(state, entry)
-    end
-  end
-
   defp initial_indexes(state, index) do
     state.configuration
     |> Configuration.servers
@@ -806,7 +840,7 @@ defmodule Raft.Server do
   end
 
   defp respond_to_client(%{from: from}, rpy) do
-    GenStateMachine.reply(from, rpy)
+    :gen_statem.reply(from, rpy)
   end
 
   defp consistent?(%{prev_log_index: 0, prev_log_term: 0}, _), do: true
