@@ -64,7 +64,7 @@ defmodule Raft.Server do
 
   @doc """
   Applies a new log to the application state machine. This is done in a highly
-  consistent manor. This must be called on the leader or it will fail.
+  consistent manner. This must be called on the leader or it will fail.
   """
   # @spec apply(server(), term()) :: :ok | {:error, :timeout} | {:error, :not_leader}
 
