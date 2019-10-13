@@ -279,7 +279,6 @@ defmodule Raft.Server do
     if consistent?(req, state) do
       Logger.debug(fn ->
         count = Enum.count(req.entries)
-        me = state.me
         indexes = Enum.map(req.entries, & &1.index)
         "#{name(state)}: Log is consistent. Appending #{count} new entries at indexes: #{inspect indexes}"
       end)
